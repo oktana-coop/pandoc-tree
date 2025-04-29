@@ -23,7 +23,7 @@ blockTreeNodeUnfolder (PandocBlock block) = case block of
   Pandoc.Plain inlines -> ((TreeNode . BlockNode . PandocBlock . Pandoc.Plain) [], [buildInlineNode inlines])
   Pandoc.Para inlines -> ((TreeNode . BlockNode . PandocBlock . Pandoc.Para) [], [buildInlineNode inlines])
   Pandoc.Header level attrs inlines -> (TreeNode . BlockNode $ PandocBlock $ Pandoc.Header level attrs [], [buildInlineNode inlines])
-  Pandoc.CodeBlock attrs text -> (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs text, [])
+  Pandoc.CodeBlock attrs text -> (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs T.empty, [InlineNode $ InlineContent $ [TextSpan {value = text, marks = []}]])
   Pandoc.BulletList items -> ((TreeNode . BlockNode . PandocBlock . Pandoc.BulletList) [], map (BlockNode . ListItem) items)
   Pandoc.OrderedList attrs items -> (TreeNode $ BlockNode $ PandocBlock $ Pandoc.OrderedList attrs [], map (BlockNode . ListItem) items)
   _ -> undefined
