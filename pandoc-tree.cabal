@@ -44,11 +44,19 @@ test-suite pandoc-tree-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      GroupInlinesTreeTest
       Paths_pandoc_tree
   hs-source-dirs:
       test
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       base >=4.7 && <5
+    , containers >=0.7
+    , hspec >=2.11.10
+    , pandoc >=3.5
     , pandoc-tree
+    , pandoc-types >=1.23.1
+    , tasty >=1.5.3
+    , tasty-hspec >=1.2.0.4
+    , text >=2.1.1
   default-language: Haskell2010

@@ -1,2 +1,7 @@
+import GroupInlinesTreeTest (tests)
+import Test.Tasty (defaultMain, testGroup)
+
 main :: IO ()
-main = putStrLn "Test suite not yet implemented"
+main = do
+  groupedInlinesTreeTests <- GroupInlinesTreeTest.tests
+  defaultMain $ testGroup "Tests" [groupedInlinesTreeTests]

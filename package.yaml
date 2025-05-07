@@ -54,3 +54,10 @@ tests:
       - -with-rtsopts=-N
     dependencies:
       - pandoc-tree
+      - containers >= 0.7
+      - hspec >= 2.11.10
+      - pandoc >= 3.5
+      - pandoc-types >= 1.23.1
+      - tasty >= 1.5.3
+      - tasty-hspec >= 1.2.0.4
+      - text >= 2.1.1
