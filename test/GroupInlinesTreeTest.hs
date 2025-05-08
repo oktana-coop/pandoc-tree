@@ -2,20 +2,19 @@
 
 module GroupInlinesTreeTest (tests) where
 
-import Data.Tree (Tree (Node), unfoldForest)
-import DocTree.Common (TextSpan (..))
+import Data.Tree (Tree (Node))
+import qualified DocTree.Common as RichText (LinkMark (..), Mark (..), TextSpan (..))
 import DocTree.GroupedInlines (BlockNode (..), DocNode (..), InlineNode (..), TreeNode (..), toTree)
-import Test.Hspec (Spec, describe, expectationFailure, it, shouldBe)
+import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hspec (testSpec)
-import Text.Pandoc.Builder as Pandoc (Block (..), Inline (..), Many (unMany), bulletList, doc, emph, fromList, header, link, orderedList, para, plain, str, strong, toList)
-import Text.Pandoc.Class (runIO)
+import Text.Pandoc.Builder as Pandoc (Block (..), Inline (..), doc, fromList, link, para, str, strong, toList)
 import Text.Pandoc.Definition (nullAttr)
 
 treePandocBlockNode :: Pandoc.Block -> DocNode
 treePandocBlockNode = TreeNode . BlockNode . PandocBlock
 
-treeInlineNode :: [TextSpan] -> DocNode
+treeInlineNode :: [RichText.TextSpan] -> DocNode
 treeInlineNode = TreeNode . InlineNode . InlineContent
 
 tests :: IO TestTree
@@ -49,7 +48,7 @@ spec = do
                 (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                 [ Node
                     ( treeInlineNode $
-                        [TextSpan "A heading 1" []]
+                        [RichText.TextSpan "A heading 1" []]
                     )
                     []
                 ],
@@ -57,7 +56,7 @@ spec = do
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
                     ( treeInlineNode $
-                        [TextSpan "A paragraph" []]
+                        [RichText.TextSpan "A paragraph" []]
                     )
                     []
                 ],
@@ -65,7 +64,42 @@ spec = do
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
                     ( treeInlineNode $
-                        [TextSpan "Another paragraph" []]
+                        [RichText.TextSpan "Another paragraph" []]
+                    )
+                    []
+                ]
+            ]
+
+    toTree input `shouldBe` expected
+
+  it "groups text spans with different marks under a single inline node" $ do
+    let input =
+          Pandoc.doc $
+            fromList $
+              concat
+                [ toList $
+                    Pandoc.para $
+                      fromList $
+                        concat
+                          [ toList $ Pandoc.str "Some plain text followed by ",
+                            toList $ Pandoc.strong $ Pandoc.str "strong text",
+                            toList $ Pandoc.str " and a link: ",
+                            toList $ Pandoc.link "https://automerge.org/" "Automerge" $ Pandoc.str "Automerge"
+                          ]
+                ]
+
+        expected =
+          Node
+            Root
+            [ Node
+                (treePandocBlockNode $ Pandoc.Para [])
+                [ Node
+                    ( treeInlineNode $
+                        [ RichText.TextSpan "Some plain text followed by " [],
+                          RichText.TextSpan "strong text" [RichText.StrongMark],
+                          RichText.TextSpan " and a link: " [],
+                          RichText.TextSpan "Automerge" [RichText.LinkMark $ RichText.Link nullAttr ("https://automerge.org/", "Automerge")]
+                        ]
                     )
                     []
                 ]
