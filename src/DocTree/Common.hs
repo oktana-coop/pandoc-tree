@@ -13,7 +13,7 @@ instance Ord LinkMark where
   compare :: LinkMark -> LinkMark -> Ordering
   compare (Link _ target1) (Link _ target2) = compare target1 target2
 
-data Mark = EmphMark | StrongMark | LinkMark LinkMark deriving (Show, Eq, Ord)
+data Mark = EmphMark | StrongMark | LinkMark LinkMark | CodeMark deriving (Show, Eq, Ord)
 
 data TextSpan = TextSpan {value :: T.Text, marks :: [Mark]} deriving (Show, Eq)
 

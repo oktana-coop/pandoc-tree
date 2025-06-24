@@ -56,6 +56,8 @@ inlineToTextSpan inline = case inline of
   Pandoc.Strong inlines -> addMark StrongMark inlines
   Pandoc.Emph inlines -> addMark EmphMark inlines
   Pandoc.Link attrs inlines target -> addMark (LinkMark $ DocTree.Common.Link attrs target) inlines
+  -- TODO: Handle code attrs
+  Pandoc.Code _ str -> [TextSpan str [CodeMark]]
   -- TODO: Handle other inline elements
   _ -> []
 
