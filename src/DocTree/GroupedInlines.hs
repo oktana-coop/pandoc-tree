@@ -2,8 +2,8 @@ module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), DocNode (..), Tr
 
 import Control.Monad.State (State, get, modify, runState)
 import qualified Data.Text as T
-import Data.Tree (Tree (Node), unfoldForestM)
-import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), TextSpan (..))
+import Data.Tree (Tree (Node), unfoldForestM, unfoldTreeM)
+import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
 import Text.Pandoc.Definition as Pandoc (Block (..), Inline (..), Pandoc (..))
 
 data TreeNode = BlockNode BlockNode | InlineNode [InlineSpan] deriving (Show, Eq)
@@ -13,7 +13,7 @@ data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
 data NoteData = NoteData
   { noteCounter :: Int,
     -- Accumulated note content block nodes
-    noteContents :: [Tree BlockNode]
+    noteContents :: [Tree DocNode]
   }
 
 type NotesState = State NoteData
@@ -24,7 +24,7 @@ toTree (Pandoc.Pandoc _ blocks) = Node Root forestWithNotes
     blockNodes = map (BlockNode . PandocBlock) blocks
     (mainForest, notesState) = runState (unfoldForestM treeNodeUnfolder blockNodes) initialState
     initialState = NoteData 0 []
-    noteTrees = (fmap . fmap) (TreeNode . BlockNode) $ noteContents notesState
+    noteTrees = noteContents notesState
     forestWithNotes = mainForest <> noteTrees
 
 treeNodeUnfolder :: TreeNode -> NotesState (DocNode, [TreeNode])
@@ -88,6 +88,28 @@ inlineToSpans inline = case inline of
     return $ addMark (LinkMark $ DocTree.Common.Link attrs target) wrappedSpans
   -- TODO: Handle code attrs
   Pandoc.Code _ str -> return [InlineText $ TextSpan str [CodeMark]]
+  Pandoc.Note noteBlocks -> do
+    -- Generate note ID and create note content
+    notesState <- get
+    let newNoteId = noteCounter notesState + 1
+        noteIdText = T.pack $ show newNoteId
+        noteId = NoteId noteIdText
+
+    -- Convert note blocks to spans
+    noteContentTree <- unfoldTreeM treeNodeUnfolder (BlockNode $ NoteContent noteId noteBlocks)
+
+    -- Update state
+    modify
+      ( \currentNotestState ->
+          -- Getting a new state using the record update syntax.
+          currentNotestState
+            { noteCounter = newNoteId,
+              noteContents = noteContents currentNotestState <> [noteContentTree]
+            }
+      )
+
+    -- Return note ref node
+    return [NoteRef noteId]
   -- TODO: Handle other inline elements
   _ -> return []
 

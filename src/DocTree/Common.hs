@@ -1,6 +1,6 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module DocTree.Common (BlockNode (..), TextSpan (..), Mark (..), LinkMark (..), InlineSpan (..)) where
+module DocTree.Common (BlockNode (..), TextSpan (..), Mark (..), LinkMark (..), InlineSpan (..), NoteId (..)) where
 
 import qualified Data.Text as T
 import Text.Pandoc.Definition as Pandoc (Attr, Block (..), Target)
