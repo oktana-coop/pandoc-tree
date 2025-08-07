@@ -2,7 +2,7 @@ module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), DocNode (..), Tr
 
 import Control.Monad.State (State, get, modify, runState)
 import qualified Data.Text as T
-import Data.Tree (Tree (Node), unfoldForest)
+import Data.Tree (Tree (Node), unfoldForestM)
 import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), TextSpan (..))
 import Text.Pandoc.Definition as Pandoc (Block (..), Inline (..), Pandoc (..))
 
@@ -13,17 +13,23 @@ data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
 data NoteData = NoteData
   { noteCounter :: Int,
     -- Accumulated note content block nodes
-    noteContents :: [BlockNode]
+    noteContents :: [Tree BlockNode]
   }
 
 type NotesState = State NoteData
 
 toTree :: Pandoc.Pandoc -> Tree DocNode
-toTree (Pandoc.Pandoc _ blocks) = Node Root $ unfoldForest treeNodeUnfolder $ map (BlockNode . PandocBlock) blocks
+toTree (Pandoc.Pandoc _ blocks) = Node Root forestWithNotes
+  where
+    blockNodes = map (BlockNode . PandocBlock) blocks
+    (mainForest, notesState) = runState (unfoldForestM treeNodeUnfolder blockNodes) initialState
+    initialState = NoteData 0 []
+    noteTrees = (fmap . fmap) (TreeNode . BlockNode) $ noteContents notesState
+    forestWithNotes = mainForest <> noteTrees
 
 treeNodeUnfolder :: TreeNode -> NotesState (DocNode, [TreeNode])
-treeNodeUnfolder (BlockNode blockNode) = fmap blockTreeNodeUnfolder blockNode
-treeNodeUnfolder (InlineNode inlineSpans) = fmap inlineTreeNodeUnfolder inlineSpans
+treeNodeUnfolder (BlockNode blockNode) = blockTreeNodeUnfolder blockNode
+treeNodeUnfolder (InlineNode inlineSpans) = return $ inlineTreeNodeUnfolder inlineSpans
 
 blockTreeNodeUnfolder :: BlockNode -> NotesState (DocNode, [TreeNode])
 blockTreeNodeUnfolder (PandocBlock block) = case block of
