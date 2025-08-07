@@ -2,12 +2,10 @@ module DocTree.GroupedInlines (BlockNode (..), InlineNode (..), DocNode (..), Tr
 
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), unfoldForest)
-import DocTree.Common (BlockNode (..), LinkMark (..), Mark (..), TextSpan (..))
+import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), TextSpan (..))
 import Text.Pandoc.Definition as Pandoc (Block (..), Inline (..), Pandoc (..))
 
-data InlineNode = InlineContent [TextSpan] deriving (Show, Eq)
-
-data TreeNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
+data TreeNode = BlockNode BlockNode | InlineNode [InlineSpan] deriving (Show, Eq)
 
 data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
 
