@@ -1,4 +1,4 @@
-module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), DocNode (..), TreeNode (..), toTree) where
+module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode(..), DocNode (..), TreeNode (..), toTree) where
 
 import Control.Monad.State (State, get, modify, runState)
 import qualified Data.Text as T
