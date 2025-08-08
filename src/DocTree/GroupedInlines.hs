@@ -6,7 +6,9 @@ import Data.Tree (Tree (Node), unfoldForestM, unfoldTreeM)
 import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
 import Text.Pandoc.Definition as Pandoc (Block (..), Inline (..), Pandoc (..))
 
-data TreeNode = BlockNode BlockNode | InlineNode [InlineSpan] deriving (Show, Eq)
+data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
+
+data TreeNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
 
 data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
 
@@ -29,7 +31,7 @@ toTree (Pandoc.Pandoc _ blocks) = Node Root forestWithNotes
 
 treeNodeUnfolder :: TreeNode -> NotesState (DocNode, [TreeNode])
 treeNodeUnfolder (BlockNode blockNode) = blockTreeNodeUnfolder blockNode
-treeNodeUnfolder (InlineNode inlineSpans) = return $ inlineTreeNodeUnfolder inlineSpans
+treeNodeUnfolder (InlineNode inlineNode) = return $ inlineTreeNodeUnfolder inlineNode
 
 blockTreeNodeUnfolder :: BlockNode -> NotesState (DocNode, [TreeNode])
 blockTreeNodeUnfolder (PandocBlock block) = case block of
@@ -51,7 +53,7 @@ blockTreeNodeUnfolder (ListItem children) = return ((TreeNode . BlockNode . List
 blockTreeNodeUnfolder (NoteContent noteId children) = return (TreeNode $ BlockNode $ NoteContent noteId [], map (BlockNode . PandocBlock) children)
 
 buildInlineNode :: [Pandoc.Inline] -> NotesState TreeNode
-buildInlineNode inlines = fmap InlineNode $ pandocInlinesToSpans inlines
+buildInlineNode inlines = fmap (InlineNode . InlineContent) $ pandocInlinesToSpans inlines
 
 pandocInlinesToSpans :: [Pandoc.Inline] -> NotesState [InlineSpan]
 pandocInlinesToSpans inlines =
@@ -121,5 +123,5 @@ addMark mark spans = fmap (addMarkToSpan mark) spans
     -- Leave non-text spans (like note refs) unchanged
     addMarkToSpan _ otherSpan = otherSpan
 
-inlineTreeNodeUnfolder :: [InlineSpan] -> (DocNode, [TreeNode])
-inlineTreeNodeUnfolder inlineSpans = (TreeNode $ InlineNode inlineSpans, [])
+inlineTreeNodeUnfolder :: InlineNode -> (DocNode, [TreeNode])
+inlineTreeNodeUnfolder inlineNode = (TreeNode $ InlineNode inlineNode, [])
