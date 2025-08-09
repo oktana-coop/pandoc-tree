@@ -36,6 +36,7 @@ library:
   source-dirs: src
   dependencies:
     - containers >= 0.7
+    - mtl >= 2.3.1
     - pandoc >= 3.5
     - pandoc-types >= 1.23.1
     - text >= 2.1.1

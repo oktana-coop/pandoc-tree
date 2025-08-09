@@ -1,70 +1,127 @@
-module DocTree.GroupedInlines (BlockNode (..), InlineNode (..), DocNode (..), TreeNode (..), toTree) where
+module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode(..), DocNode (..), TreeNode (..), toTree) where
 
+import Control.Monad.State (State, get, modify, runState)
 import qualified Data.Text as T
-import Data.Tree (Tree (Node), unfoldForest)
-import DocTree.Common (BlockNode (..), LinkMark (..), Mark (..), TextSpan (..))
+import Data.Tree (Tree (Node), unfoldForestM, unfoldTreeM)
+import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
 import Text.Pandoc.Definition as Pandoc (Block (..), Inline (..), Pandoc (..))
 
-data InlineNode = InlineContent [TextSpan] deriving (Show, Eq)
+data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
 
 data TreeNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
 
 data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
 
+data NoteData = NoteData
+  { noteCounter :: Int,
+    -- Accumulated note content block nodes
+    noteContents :: [Tree DocNode]
+  }
+
+type NotesState = State NoteData
+
 toTree :: Pandoc.Pandoc -> Tree DocNode
-toTree (Pandoc.Pandoc _ blocks) = Node Root $ unfoldForest treeNodeUnfolder $ map (BlockNode . PandocBlock) blocks
+toTree (Pandoc.Pandoc _ blocks) = Node Root forestWithNotes
+  where
+    blockNodes = map (BlockNode . PandocBlock) blocks
+    (mainForest, notesState) = runState (unfoldForestM treeNodeUnfolder blockNodes) initialState
+    initialState = NoteData 0 []
+    noteTrees = noteContents notesState
+    forestWithNotes = mainForest <> noteTrees
 
-treeNodeUnfolder :: TreeNode -> (DocNode, [TreeNode])
+treeNodeUnfolder :: TreeNode -> NotesState (DocNode, [TreeNode])
 treeNodeUnfolder (BlockNode blockNode) = blockTreeNodeUnfolder blockNode
-treeNodeUnfolder (InlineNode inlineNode) = inlineTreeNodeUnfolder inlineNode
+treeNodeUnfolder (InlineNode inlineNode) = return $ inlineTreeNodeUnfolder inlineNode
 
-blockTreeNodeUnfolder :: BlockNode -> (DocNode, [TreeNode])
+blockTreeNodeUnfolder :: BlockNode -> NotesState (DocNode, [TreeNode])
 blockTreeNodeUnfolder (PandocBlock block) = case block of
-  Pandoc.Plain inlines -> ((TreeNode . BlockNode . PandocBlock . Pandoc.Plain) [], [buildInlineNode inlines])
-  Pandoc.Para inlines -> ((TreeNode . BlockNode . PandocBlock . Pandoc.Para) [], [buildInlineNode inlines])
-  Pandoc.Header level attrs inlines -> (TreeNode . BlockNode $ PandocBlock $ Pandoc.Header level attrs [], [buildInlineNode inlines])
-  Pandoc.CodeBlock attrs text -> (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs T.empty, [InlineNode $ InlineContent $ [TextSpan {value = text, marks = []}]])
-  Pandoc.BulletList items -> ((TreeNode . BlockNode . PandocBlock . Pandoc.BulletList) [], map (BlockNode . ListItem) items)
-  Pandoc.OrderedList attrs items -> (TreeNode $ BlockNode $ PandocBlock $ Pandoc.OrderedList attrs [], map (BlockNode . ListItem) items)
-  Pandoc.BlockQuote children -> ((TreeNode . BlockNode . PandocBlock . Pandoc.BlockQuote) [], map (BlockNode . PandocBlock) children)
+  Pandoc.Plain inlines -> do
+    inlineNode <- buildInlineNode inlines
+    return ((TreeNode . BlockNode . PandocBlock . Pandoc.Plain) [], [inlineNode])
+  Pandoc.Para inlines -> do
+    inlineNode <- buildInlineNode inlines
+    return ((TreeNode . BlockNode . PandocBlock . Pandoc.Para) [], [inlineNode])
+  Pandoc.Header level attrs inlines -> do
+    inlineNode <- buildInlineNode inlines
+    return (TreeNode . BlockNode $ PandocBlock $ Pandoc.Header level attrs [], [inlineNode])
+  Pandoc.CodeBlock attrs text -> return (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs T.empty, [InlineNode $ InlineContent $ [InlineText $ TextSpan {value = text, marks = []}]])
+  Pandoc.BulletList items -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BulletList) [], map (BlockNode . ListItem) items)
+  Pandoc.OrderedList attrs items -> return (TreeNode $ BlockNode $ PandocBlock $ Pandoc.OrderedList attrs [], map (BlockNode . ListItem) items)
+  Pandoc.BlockQuote children -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BlockQuote) [], map (BlockNode . PandocBlock) children)
   _ -> undefined
-blockTreeNodeUnfolder (ListItem children) = ((TreeNode . BlockNode . ListItem) [], map (BlockNode . PandocBlock) children)
+blockTreeNodeUnfolder (ListItem children) = return ((TreeNode . BlockNode . ListItem) [], map (BlockNode . PandocBlock) children)
+blockTreeNodeUnfolder (NoteContent noteId children) = return (TreeNode $ BlockNode $ NoteContent noteId [], map (BlockNode . PandocBlock) children)
 
-buildInlineNode :: [Pandoc.Inline] -> TreeNode
-buildInlineNode inlines = InlineNode $ InlineContent $ inlinesToTextSpans inlines
+buildInlineNode :: [Pandoc.Inline] -> NotesState TreeNode
+buildInlineNode inlines = fmap (InlineNode . InlineContent) $ pandocInlinesToSpans inlines
 
-inlinesToTextSpans :: [Pandoc.Inline] -> [TextSpan]
-inlinesToTextSpans = mergeSameMarkSpans . foldMap inlineToTextSpan
+pandocInlinesToSpans :: [Pandoc.Inline] -> NotesState [InlineSpan]
+pandocInlinesToSpans inlines =
+  -- Use fmap to lift `mergeSameMarkSpans . concat` over the State structure
+  fmap (mergeSameMarkSpans . concat) (perInlineSpans inlines)
+  where
+    -- Convert each inline into a list of spans, inside the State monad.
+    perInlineSpans :: [Pandoc.Inline] -> NotesState [[InlineSpan]]
+    perInlineSpans = mapM inlineToSpans
 
-mergeSameMarkSpans :: [TextSpan] -> [TextSpan]
+mergeSameMarkSpans :: [InlineSpan] -> [InlineSpan]
 mergeSameMarkSpans = foldr mergeOrAppendAdjacent []
   where
-    -- This is the folding function for merging the adjacent elements if their marks are the same
-    mergeOrAppendAdjacent :: TextSpan -> [TextSpan] -> [TextSpan]
+    mergeOrAppendAdjacent :: InlineSpan -> [InlineSpan] -> [InlineSpan]
     mergeOrAppendAdjacent x [] = [x]
-    -- pattern-match on: the current element (x), the one to its right (firstOfRest) and the rest of the fold
-    mergeOrAppendAdjacent x (firstOfRest : rest) =
-      if marks x == marks firstOfRest
-        -- if the element's marks are the same with the one to its right, we merge them and then add them to the rest of the fold.
-        then (x <> firstOfRest) : rest
-        -- if they are not the same we end up with an extra text span in the list for the current element (we prepend it to the existing list for the fold.)
-        else x : firstOfRest : rest
+    -- We only merge if the adjacent spans are **text** spans and they have the same marks.
+    mergeOrAppendAdjacent (InlineText xTextSpan) (InlineText firstOrRestTextSpan : rest)
+      | marks xTextSpan == marks firstOrRestTextSpan =
+          InlineText (xTextSpan <> firstOrRestTextSpan) : rest
+    mergeOrAppendAdjacent x rest = x : rest
 
-inlineToTextSpan :: Pandoc.Inline -> [TextSpan]
-inlineToTextSpan inline = case inline of
-  Pandoc.Str str -> [TextSpan str []]
-  Pandoc.Space -> [TextSpan (T.pack " ") []]
-  Pandoc.Strong inlines -> addMark StrongMark inlines
-  Pandoc.Emph inlines -> addMark EmphMark inlines
-  Pandoc.Link attrs inlines target -> addMark (LinkMark $ DocTree.Common.Link attrs target) inlines
+inlineToSpans :: Pandoc.Inline -> NotesState [InlineSpan]
+inlineToSpans inline = case inline of
+  Pandoc.Str str -> return [InlineText $ TextSpan str []]
+  Pandoc.Space -> return [InlineText $ TextSpan (T.pack " ") []]
+  Pandoc.Strong inlines -> do
+    wrappedSpans <- pandocInlinesToSpans inlines
+    return $ addMark StrongMark wrappedSpans
+  Pandoc.Emph inlines -> do
+    wrappedSpans <- pandocInlinesToSpans inlines
+    return $ addMark EmphMark wrappedSpans
+  Pandoc.Link attrs inlines target -> do
+    wrappedSpans <- pandocInlinesToSpans inlines
+    return $ addMark (LinkMark $ DocTree.Common.Link attrs target) wrappedSpans
   -- TODO: Handle code attrs
-  Pandoc.Code _ str -> [TextSpan str [CodeMark]]
-  -- TODO: Handle other inline elements
-  _ -> []
+  Pandoc.Code _ str -> return [InlineText $ TextSpan str [CodeMark]]
+  Pandoc.Note noteBlocks -> do
+    -- Generate note ID and create note content
+    notesState <- get
+    let newNoteId = noteCounter notesState + 1
+        noteIdText = T.pack $ show newNoteId
+        noteId = NoteId noteIdText
 
-addMark :: Mark -> [Pandoc.Inline] -> [TextSpan]
--- Monoidally add the mark to all text spans created for the inline elements
-addMark mark inlines = fmap (TextSpan T.empty [mark] <>) (inlinesToTextSpans inlines)
+    -- Convert note blocks to spans
+    noteContentTree <- unfoldTreeM treeNodeUnfolder (BlockNode $ NoteContent noteId noteBlocks)
+
+    -- Update state
+    modify
+      ( \currentNotestState ->
+          -- Getting a new state using the record update syntax.
+          currentNotestState
+            { noteCounter = newNoteId,
+              noteContents = noteContents currentNotestState <> [noteContentTree]
+            }
+      )
+
+    -- Return note ref node
+    return [NoteRef noteId]
+  -- TODO: Handle other inline elements
+  _ -> return []
+
+addMark :: Mark -> [InlineSpan] -> [InlineSpan]
+addMark mark spans = fmap (addMarkToSpan mark) spans
+  where
+    addMarkToSpan :: Mark -> InlineSpan -> InlineSpan
+    addMarkToSpan m (InlineText textSpan) = InlineText $ TextSpan T.empty [m] <> textSpan
+    -- Leave non-text spans (like note refs) unchanged
+    addMarkToSpan _ otherSpan = otherSpan
 
 inlineTreeNodeUnfolder :: InlineNode -> (DocNode, [TreeNode])
 inlineTreeNodeUnfolder inlineNode = (TreeNode $ InlineNode inlineNode, [])
