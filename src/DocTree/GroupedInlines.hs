@@ -1,4 +1,4 @@
-module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode(..), DocNode (..), TreeNode (..), toTree) where
+module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode (..), DocNode (..), TreeNode (..), toTree, toPandoc) where
 
 import Control.Monad.State (State, get, modify, runState)
 import qualified Data.Text as T
@@ -125,3 +125,6 @@ addMark mark spans = fmap (addMarkToSpan mark) spans
 
 inlineTreeNodeUnfolder :: InlineNode -> (DocNode, [TreeNode])
 inlineTreeNodeUnfolder inlineNode = (TreeNode $ InlineNode inlineNode, [])
+
+toPandoc :: Tree DocNode -> Pandoc.Pandoc
+toPandoc = undefined
