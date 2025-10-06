@@ -2,33 +2,28 @@
 
 module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode (..), DocNode (..), TreeNode (..), toTree, toPandoc) where
 
+import Control.Monad.Except (throwError)
 import Control.Monad.State (State, get, modify, runState)
-import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), foldTree, unfoldForestM, unfoldTreeM)
 import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
-import Text.Pandoc (PandocError (PandocParseError, PandocSyntaxMapError), ReaderOptions)
+import Text.Pandoc (PandocError (PandocSyntaxMapError))
 import Text.Pandoc.Builder as Pandoc
   ( Block (..),
     Blocks,
-    Inline (Note, Str),
     Inlines,
-    ListNumberDelim (DefaultDelim),
-    ListNumberStyle (DefaultStyle),
     Pandoc,
     code,
     doc,
     emph,
     fromList,
-    link,
     linkWith,
-    nullAttr,
-    singleton,
     str,
     strong,
     toList,
   )
-import Text.Pandoc.Definition as Pandoc (Block (..), Inline (..), Pandoc (..))
+import Text.Pandoc.Class (PandocMonad)
+import Text.Pandoc.Definition as Pandoc (Inline (..), Pandoc (..))
 import Utils.Sequence (firstValue)
 
 data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
@@ -153,12 +148,17 @@ inlineTreeNodeUnfolder inlineNode = (TreeNode $ InlineNode inlineNode, [])
 
 data BlockOrInlines = BlockElement Pandoc.Block | InlineElement Pandoc.Inlines
 
-toPandoc :: Tree DocNode -> Pandoc.Pandoc
-toPandoc = undefined
+toPandoc :: (PandocMonad m) => Tree DocNode -> m Pandoc.Pandoc
+toPandoc = either throwError (pure . Pandoc.doc) . treeToPandocBlocks
+
+treeToPandocBlocks :: Tree DocNode -> Either PandocError Pandoc.Blocks
+treeToPandocBlocks tree = sequenceA (foldTree treeNodeToPandocBlockOrInlines tree) >>= getBlockSeq
 
 treeNodeToPandocBlockOrInlines :: DocNode -> [[Either PandocError BlockOrInlines]] -> [Either PandocError BlockOrInlines]
 treeNodeToPandocBlockOrInlines node childrenNodes = case node of
   Root -> concat childrenNodes
+  -- TODO: Consider just concatenating children in the case of `Plain`.
+  TreeNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.Para _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.Header level attr _))) -> [fmap (BlockElement . Pandoc.Header level attr . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.CodeBlock attr _))) ->
@@ -174,6 +174,7 @@ treeNodeToPandocBlockOrInlines node childrenNodes = case node of
   TreeNode (BlockNode (PandocBlock (Pandoc.BlockQuote _))) -> [fmap (BlockElement . Pandoc.BlockQuote) (traverseAssertingChildIsBlock $ concat childrenNodes)]
   TreeNode (BlockNode (NoteContent _ _)) -> [Left $ PandocSyntaxMapError "Error in mapping: found unmapped or orphan note content node"]
   TreeNode (InlineNode (InlineContent inlineSpans)) -> (fmap . fmap) InlineElement $ inlineSpansToPandocInlines inlineSpans
+  -- TODO: Iteratively handle more blocks
   _ -> undefined
   where
     concatChildrenInlines :: [[Either PandocError BlockOrInlines]] -> Either PandocError Pandoc.Inlines
