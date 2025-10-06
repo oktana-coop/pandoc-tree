@@ -44,6 +44,8 @@ library:
     - DocTree.Common
     - DocTree.GroupedInlines
     - DocTree.LeafTextSpans
+  other-modules:
+    - Utils.Sequence
 
 tests:
   pandoc-tree-test:
