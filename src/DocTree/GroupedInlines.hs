@@ -4,6 +4,7 @@ module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode (..),
 
 import Control.Monad.Except (throwError)
 import Control.Monad.State (State, get, modify, runState)
+import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), foldTree, unfoldForestM, unfoldTreeM)
 import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
@@ -18,6 +19,7 @@ import Text.Pandoc.Builder as Pandoc
     emph,
     fromList,
     linkWith,
+    singleton,
     str,
     strong,
     toList,
@@ -152,10 +154,12 @@ toPandoc :: (PandocMonad m) => Tree DocNode -> m Pandoc.Pandoc
 toPandoc = either throwError (pure . Pandoc.doc) . treeToPandocBlocks
 
 treeToPandocBlocks :: Tree DocNode -> Either PandocError Pandoc.Blocks
-treeToPandocBlocks tree = sequenceA (foldTree treeNodeToPandocBlockOrInlines tree) >>= getBlockSeq
+treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocBlockOrInlines noteContentsMap) tree) >>= getBlockSeq
+  where
+    noteContentsMap = buildNoteContentsMap tree
 
-treeNodeToPandocBlockOrInlines :: DocNode -> [[Either PandocError BlockOrInlines]] -> [Either PandocError BlockOrInlines]
-treeNodeToPandocBlockOrInlines node childrenNodes = case node of
+treeNodeToPandocBlockOrInlines :: NoteContentsMap -> DocNode -> [[Either PandocError BlockOrInlines]] -> [Either PandocError BlockOrInlines]
+treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
   Root -> concat childrenNodes
   -- TODO: Consider just concatenating children in the case of `Plain`.
   TreeNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]
@@ -172,7 +176,8 @@ treeNodeToPandocBlockOrInlines node childrenNodes = case node of
   TreeNode (BlockNode (PandocBlock (Pandoc.BulletList _))) -> [fmap (BlockElement . Pandoc.BulletList) (mapToChildBlocks childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.OrderedList attrs _))) -> [fmap (BlockElement . Pandoc.OrderedList attrs) (mapToChildBlocks childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.BlockQuote _))) -> [fmap (BlockElement . Pandoc.BlockQuote) (traverseAssertingChildIsBlock $ concat childrenNodes)]
-  TreeNode (BlockNode (NoteContent _ _)) -> [Left $ PandocSyntaxMapError "Error in mapping: found unmapped or orphan note content node"]
+  -- Note content subtrees will be mapped to Pandoc notes when handling the note refs.
+  TreeNode (BlockNode (NoteContent _ _)) -> []
   TreeNode (InlineNode (InlineContent inlineSpans)) -> (fmap . fmap) InlineElement $ inlineSpansToPandocInlines inlineSpans
   -- TODO: Iteratively handle more blocks
   _ -> undefined
@@ -187,7 +192,11 @@ treeNodeToPandocBlockOrInlines node childrenNodes = case node of
     inlineSpansToPandocInlines = map inlineSpanToPandocInlines
       where
         inlineSpanToPandocInlines :: InlineSpan -> Either PandocError Pandoc.Inlines
-        inlineSpanToPandocInlines (NoteRef _) = Left $ PandocSyntaxMapError "Error in mapping: found unmapped or orphan note ref node"
+        inlineSpanToPandocInlines (NoteRef noteId) = case M.lookup noteId noteContentsMap of
+          Just noteContentsSubtree -> do
+            noteContentBlocks <- treeToPandocBlocks noteContentsSubtree
+            Right $ singleton $ Pandoc.Note $ toList noteContentBlocks
+          Nothing -> Left $ PandocSyntaxMapError "Error in mapping: Found orphan note ref"
         inlineSpanToPandocInlines (InlineText textSpan) = Right $ convertTextSpan textSpan
 
     mapToChildBlocks :: [[Either PandocError BlockOrInlines]] -> Either PandocError [[Pandoc.Block]]
@@ -228,3 +237,12 @@ assertBlock (InlineElement _) = Left $ PandocSyntaxMapError "Error in mapping: f
 assertInlines :: BlockOrInlines -> Either PandocError Pandoc.Inlines
 assertInlines (BlockElement _) = Left $ PandocSyntaxMapError "Error in mapping: found block node in inline node slot"
 assertInlines (InlineElement inlines) = Right $ inlines
+
+type NoteContentsMap = M.Map NoteId (Tree DocNode)
+
+buildNoteContentsMap :: Tree DocNode -> NoteContentsMap
+buildNoteContentsMap subtree@(Node node children) = case node of
+  TreeNode (BlockNode (NoteContent noteId _)) -> M.insert noteId subtree childMaps
+  _ -> childMaps
+  where
+    childMaps = M.unions (map buildNoteContentsMap children)
