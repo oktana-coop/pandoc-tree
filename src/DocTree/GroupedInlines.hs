@@ -30,6 +30,12 @@ import Utils.Sequence (firstValue)
 
 data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
 
+instance Semigroup InlineNode where
+  (<>) (InlineContent spans1) (InlineContent spans2) = InlineContent (spans1 <> spans2)
+
+instance Monoid InlineNode where
+  mempty = InlineContent []
+
 data TreeNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
 
 data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
