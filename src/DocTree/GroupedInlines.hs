@@ -200,8 +200,9 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
         inlineSpanToPandocInlines :: InlineSpan -> Either PandocError Pandoc.Inlines
         inlineSpanToPandocInlines (NoteRef noteId) = case M.lookup noteId noteContentsMap of
           Just noteContentsSubtree -> do
-            noteContentBlocks <- treeToPandocBlocks noteContentsSubtree
-            Right $ singleton $ Pandoc.Note $ toList noteContentBlocks
+            noteContentBlockSequences <- traverse treeToPandocBlocks noteContentsSubtree
+            let noteContentBlocks = concatMap toList noteContentBlockSequences
+            Right $ singleton $ Pandoc.Note noteContentBlocks
           Nothing -> Left $ PandocSyntaxMapError "Error in mapping: Found orphan note ref"
         inlineSpanToPandocInlines (InlineText textSpan) = Right $ convertTextSpan textSpan
 
@@ -244,11 +245,11 @@ assertInlines :: BlockOrInlines -> Either PandocError Pandoc.Inlines
 assertInlines (BlockElement _) = Left $ PandocSyntaxMapError "Error in mapping: found block node in inline node slot"
 assertInlines (InlineElement inlines) = Right $ inlines
 
-type NoteContentsMap = M.Map NoteId (Tree DocNode)
+type NoteContentsMap = M.Map NoteId ([Tree DocNode])
 
 buildNoteContentsMap :: Tree DocNode -> NoteContentsMap
-buildNoteContentsMap subtree@(Node node children) = case node of
-  TreeNode (BlockNode (NoteContent noteId _)) -> M.insert noteId subtree childMaps
+buildNoteContentsMap (Node node children) = case node of
+  TreeNode (BlockNode (NoteContent noteId _)) -> M.insert noteId children childMaps
   _ -> childMaps
   where
     childMaps = M.unions (map buildNoteContentsMap children)
