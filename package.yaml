@@ -46,6 +46,7 @@ library:
     - DocTree.LeafTextSpans
   other-modules:
     - Utils.Sequence
+    - Utils.Debug
 
 tests:
   pandoc-tree-test:
