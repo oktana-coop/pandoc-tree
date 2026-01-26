@@ -168,7 +168,7 @@ treeNodeToPandocBlockOrInlines :: NoteContentsMap -> DocNode -> [[Either PandocE
 treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
   Root -> concat childrenNodes
   -- TODO: Consider just concatenating children in the case of `Plain`.
-  TreeNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]
+  TreeNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Plain . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.Para _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.Header level attr _))) -> [fmap (BlockElement . Pandoc.Header level attr . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.CodeBlock attr _))) ->

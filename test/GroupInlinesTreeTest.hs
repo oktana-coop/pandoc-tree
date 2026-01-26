@@ -4,7 +4,7 @@ module GroupInlinesTreeTest (tests) where
 
 import Data.Tree (Tree (Node))
 import qualified DocTree.Common as RichText (LinkMark (..), Mark (..), TextSpan (..))
-import DocTree.GroupedInlines (BlockNode (..), DocNode (..), InlineNode (..), TreeNode (..), toTree)
+import DocTree.GroupedInlines (BlockNode (..), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..), toTree)
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hspec (testSpec)
@@ -15,7 +15,7 @@ treePandocBlockNode :: Pandoc.Block -> DocNode
 treePandocBlockNode = TreeNode . BlockNode . PandocBlock
 
 treeInlineNode :: [RichText.TextSpan] -> DocNode
-treeInlineNode = TreeNode . InlineNode . InlineContent
+treeInlineNode = TreeNode . InlineNode . InlineContent . (fmap InlineText)
 
 tests :: IO TestTree
 tests = do
