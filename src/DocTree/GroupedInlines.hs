@@ -73,9 +73,14 @@ blockTreeNodeUnfolder (PandocBlock block) = case block of
     inlineNode <- buildInlineNode inlines
     return (TreeNode . BlockNode $ PandocBlock $ Pandoc.Header level attrs [], [inlineNode])
   Pandoc.CodeBlock attrs text -> return (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs T.empty, [InlineNode $ InlineContent $ [InlineText $ TextSpan {value = text, marks = []}]])
+  Pandoc.RawBlock format text -> return (TreeNode . BlockNode . PandocBlock $ Pandoc.RawBlock format T.empty, [InlineNode $ InlineContent $ [InlineText $ TextSpan {value = text, marks = []}]])
   Pandoc.BulletList items -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BulletList) [], map (BlockNode . ListItem) items)
   Pandoc.OrderedList attrs items -> return (TreeNode $ BlockNode $ PandocBlock $ Pandoc.OrderedList attrs [], map (BlockNode . ListItem) items)
   Pandoc.BlockQuote children -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BlockQuote) [], map (BlockNode . PandocBlock) children)
+  Pandoc.Figure attr caption children -> return ((TreeNode . BlockNode . PandocBlock) $ Pandoc.Figure attr caption [], map (BlockNode . PandocBlock) children)
+  Pandoc.Div attr children -> return ((TreeNode . BlockNode . PandocBlock) $ Pandoc.Div attr [], map (BlockNode . PandocBlock) children)
+  Pandoc.HorizontalRule -> return (TreeNode . BlockNode . PandocBlock $ Pandoc.HorizontalRule, [])
+  -- TODO: Handle Table, LineBlock and DefinitionList
   _ -> undefined
 blockTreeNodeUnfolder (ListItem children) = return ((TreeNode . BlockNode . ListItem) [], map (BlockNode . PandocBlock) children)
 blockTreeNodeUnfolder (NoteContent noteId children) = return (TreeNode $ BlockNode $ NoteContent noteId [], map (BlockNode . PandocBlock) children)
@@ -178,10 +183,20 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
           Just (Str text) -> Right $ BlockElement $ Pandoc.CodeBlock attr text
           _ -> Left $ PandocSyntaxMapError "Error in mapping: Could not extract code block text"
     ]
+  TreeNode (BlockNode (PandocBlock (Pandoc.RawBlock format _))) ->
+    [ do
+        inlines <- concatChildrenInlines childrenNodes
+        case firstInline inlines of
+          Just (Str text) -> Right $ BlockElement $ Pandoc.RawBlock format text
+          _ -> Left $ PandocSyntaxMapError "Error in mapping: Could not extract raw block text"
+    ]
   TreeNode (BlockNode (ListItem _)) -> concat childrenNodes
   TreeNode (BlockNode (PandocBlock (Pandoc.BulletList _))) -> [fmap (BlockElement . Pandoc.BulletList) (mapToChildBlocks childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.OrderedList attrs _))) -> [fmap (BlockElement . Pandoc.OrderedList attrs) (mapToChildBlocks childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.BlockQuote _))) -> [fmap (BlockElement . Pandoc.BlockQuote) (traverseAssertingChildIsBlock $ concat childrenNodes)]
+  TreeNode (BlockNode (PandocBlock (Pandoc.Figure attr caption _))) -> [fmap (BlockElement . Pandoc.Figure attr caption) (traverseAssertingChildIsBlock $ concat childrenNodes)]
+  TreeNode (BlockNode (PandocBlock (Pandoc.Div attr _))) -> [fmap (BlockElement . Pandoc.Div attr) (traverseAssertingChildIsBlock $ concat childrenNodes)]
+  TreeNode (BlockNode (PandocBlock (Pandoc.HorizontalRule))) -> [Right $ BlockElement $ Pandoc.HorizontalRule]
   -- Note content subtrees will be mapped to Pandoc notes when handling the note refs.
   TreeNode (BlockNode (NoteContent _ _)) -> []
   TreeNode (InlineNode (InlineContent inlineSpans)) -> (fmap . fmap) InlineElement $ inlineSpansToPandocInlines inlineSpans
