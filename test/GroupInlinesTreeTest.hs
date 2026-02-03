@@ -109,6 +109,35 @@ spec = do
 
       toTree input `shouldBe` expected
 
+    it "maintains marks order in case there is more than one" $ do
+      let input =
+            Pandoc.doc $
+              fromList $
+                concat
+                  [ toList $
+                      Pandoc.para $
+                        fromList $
+                          concat
+                            [ toList $ Pandoc.strong $ Pandoc.link "https://v2editor.com/" "v2" $ Pandoc.str "v2"
+                            ]
+                  ]
+
+      let expected =
+            Node
+              Root
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Para [])
+                  [ Node
+                      ( treeInlineNode $
+                          [ RichText.TextSpan "v2" [RichText.StrongMark, RichText.LinkMark $ RichText.Link nullAttr ("https://v2editor.com/", "v2")]
+                          ]
+                      )
+                      []
+                  ]
+              ]
+
+      toTree input `shouldBe` expected
+
   describe "Pandoc → Grouped Inlines Tree" $ do
     it "handles a tree containing just a root node" $ do
       let input = Node Root []
@@ -188,6 +217,36 @@ spec = do
                               toList $ Pandoc.strong $ Pandoc.str "strong text",
                               toList $ Pandoc.str " and a link: ",
                               toList $ Pandoc.link "https://automerge.org/" "Automerge" $ Pandoc.str "Automerge"
+                            ]
+                  ]
+
+      output <- runIOorExplode $ toPandoc input
+      output `shouldBe` expected
+
+    it "maintains marks order in case there is more than one" $ do
+      let input =
+            Node
+              Root
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Para [])
+                  [ Node
+                      ( treeInlineNode $
+                          [ RichText.TextSpan "v2" [RichText.StrongMark, RichText.LinkMark $ RichText.Link nullAttr ("https://v2editor.com/", "v2")]
+                          ]
+                      )
+                      []
+                  ]
+              ]
+
+      let expected =
+            Pandoc.doc $
+              fromList $
+                concat
+                  [ toList $
+                      Pandoc.para $
+                        fromList $
+                          concat
+                            [ toList $ Pandoc.strong $ Pandoc.link "https://v2editor.com/" "v2" $ Pandoc.str "v2"
                             ]
                   ]
 

@@ -237,7 +237,7 @@ convertTextToInlines :: TextSpan -> Pandoc.Inlines
 convertTextToInlines = Pandoc.str . value
 
 convertMarksToInlines :: TextSpan -> Pandoc.Inlines -> Pandoc.Inlines
-convertMarksToInlines textSpan inlines = foldl' (flip markToInlines) inlines $ marks textSpan
+convertMarksToInlines textSpan inlines = foldr markToInlines inlines $ marks textSpan
 
 markToInlines :: Mark -> Pandoc.Inlines -> Pandoc.Inlines
 markToInlines mark = case mark of
