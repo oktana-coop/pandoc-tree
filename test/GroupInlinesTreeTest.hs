@@ -10,7 +10,7 @@ import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hspec (testSpec)
 import Text.Pandoc (runIOorExplode)
 import Text.Pandoc.Builder as Pandoc (Block (..), Inline (..), doc, fromList, link, para, str, strong, toList)
-import Text.Pandoc.Definition (nullAttr)
+import Text.Pandoc.Definition (nullAttr, nullMeta)
 
 treePandocBlockNode :: Pandoc.Block -> DocNode
 treePandocBlockNode = TreeNode . BlockNode . PandocBlock
@@ -28,7 +28,7 @@ spec = do
   describe "Pandoc → Grouped Inlines Tree" $ do
     it "handles an empty Pandoc document" $ do
       let input = Pandoc.doc $ fromList []
-          expected = Node Root []
+          expected = Node (Root nullMeta) []
 
       toTree input `shouldBe` expected
 
@@ -45,7 +45,7 @@ spec = do
           -- Their inline content (children) is modeled as separate nodes in the tree.
           expected =
             Node
-              Root
+              (Root nullMeta)
               [ Node
                   (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                   [ Node
@@ -92,7 +92,7 @@ spec = do
 
           expected =
             Node
-              Root
+              (Root nullMeta)
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
@@ -124,7 +124,7 @@ spec = do
 
       let expected =
             Node
-              Root
+              (Root nullMeta)
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
@@ -140,7 +140,7 @@ spec = do
 
   describe "Pandoc → Grouped Inlines Tree" $ do
     it "handles a tree containing just a root node" $ do
-      let input = Node Root []
+      let input = Node (Root nullMeta) []
           expected = Pandoc.doc $ fromList []
 
       output <- runIOorExplode $ toPandoc input
@@ -149,7 +149,7 @@ spec = do
     it "handles a simple document with a heading and a couple of paragraphs" $ do
       let input =
             Node
-              Root
+              (Root nullMeta)
               [ Node
                   (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                   [ Node
@@ -190,7 +190,7 @@ spec = do
     it "assigns an inline node's children to the parent block" $ do
       let input =
             Node
-              Root
+              (Root nullMeta)
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
@@ -226,7 +226,7 @@ spec = do
     it "maintains marks order in case there is more than one" $ do
       let input =
             Node
-              Root
+              (Root nullMeta)
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node

@@ -8,16 +8,13 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), foldTree, unfoldForestM, unfoldTreeM)
 import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
-import Text.Pandoc (PandocError (PandocSyntaxMapError))
+import Text.Pandoc (PandocError (PandocSyntaxMapError), nullMeta)
 import Text.Pandoc.Builder as Pandoc
   ( Block (..),
-    Blocks,
     Inlines,
     Pandoc,
     code,
-    doc,
     emph,
-    fromList,
     linkWith,
     singleton,
     str,
@@ -25,7 +22,7 @@ import Text.Pandoc.Builder as Pandoc
     toList,
   )
 import Text.Pandoc.Class (PandocMonad)
-import Text.Pandoc.Definition as Pandoc (Inline (..), Pandoc (..))
+import Text.Pandoc.Definition as Pandoc (Inline (..), Meta (..), Pandoc (..))
 import Utils.Sequence (firstValue)
 
 data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
@@ -38,7 +35,7 @@ instance Monoid InlineNode where
 
 data TreeNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
 
-data DocNode = Root | TreeNode TreeNode deriving (Show, Eq)
+data DocNode = Root Pandoc.Meta | TreeNode TreeNode deriving (Show, Eq)
 
 data NoteData = NoteData
   { noteCounter :: Int,
@@ -49,7 +46,7 @@ data NoteData = NoteData
 type NotesState = State NoteData
 
 toTree :: Pandoc.Pandoc -> Tree DocNode
-toTree (Pandoc.Pandoc _ blocks) = Node Root forestWithNotes
+toTree (Pandoc.Pandoc meta blocks) = Node (Root meta) forestWithNotes
   where
     blockNodes = map (BlockNode . PandocBlock) blocks
     (mainForest, notesState) = runState (unfoldForestM treeNodeUnfolder blockNodes) initialState
@@ -162,16 +159,20 @@ inlineTreeNodeUnfolder inlineNode = (TreeNode $ InlineNode inlineNode, [])
 data BlockOrInlines = BlockElement Pandoc.Block | InlineElement Pandoc.Inlines
 
 toPandoc :: (PandocMonad m) => Tree DocNode -> m Pandoc.Pandoc
-toPandoc = either throwError (pure . Pandoc.doc) . treeToPandocBlocks
+toPandoc tree = either throwError (wrapToPandocWithMeta tree) (treeToPandocBlocks tree)
+  where
+    wrapToPandocWithMeta :: (PandocMonad m) => Tree DocNode -> [Pandoc.Block] -> m Pandoc.Pandoc
+    wrapToPandocWithMeta (Node (Root meta) _) = pure . (Pandoc.Pandoc meta)
+    wrapToPandocWithMeta _ = pure . (Pandoc.Pandoc nullMeta)
 
-treeToPandocBlocks :: Tree DocNode -> Either PandocError Pandoc.Blocks
-treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocBlockOrInlines noteContentsMap) tree) >>= getBlockSeq
+treeToPandocBlocks :: Tree DocNode -> Either PandocError [Pandoc.Block]
+treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocBlockOrInlines noteContentsMap) tree) >>= getBlocks
   where
     noteContentsMap = buildNoteContentsMap tree
 
 treeNodeToPandocBlockOrInlines :: NoteContentsMap -> DocNode -> [[Either PandocError BlockOrInlines]] -> [Either PandocError BlockOrInlines]
 treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
-  Root -> concat childrenNodes
+  Root _ -> concat childrenNodes
   -- TODO: Consider just concatenating children in the case of `Plain`.
   TreeNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Plain . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.Para _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]
@@ -215,8 +216,8 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
         inlineSpanToPandocInlines :: InlineSpan -> Either PandocError Pandoc.Inlines
         inlineSpanToPandocInlines (NoteRef noteId) = case M.lookup noteId noteContentsMap of
           Just noteContentsSubtree -> do
-            noteContentBlockSequences <- traverse treeToPandocBlocks noteContentsSubtree
-            let noteContentBlocks = concatMap toList noteContentBlockSequences
+            noteContentBlockLists <- traverse treeToPandocBlocks noteContentsSubtree
+            let noteContentBlocks = concat noteContentBlockLists
             Right $ singleton $ Pandoc.Note noteContentBlocks
           Nothing -> Left $ PandocSyntaxMapError "Error in mapping: Found orphan note ref"
         inlineSpanToPandocInlines (InlineText textSpan) = Right $ convertTextSpan textSpan
@@ -249,8 +250,8 @@ markToInlines mark = case mark of
       concatStrInlines :: Inlines -> T.Text
       concatStrInlines inlines = T.concat [t | Pandoc.Str t <- Pandoc.toList inlines]
 
-getBlockSeq :: [BlockOrInlines] -> Either PandocError Pandoc.Blocks
-getBlockSeq = fmap Pandoc.fromList . traverse assertBlock
+getBlocks :: [BlockOrInlines] -> Either PandocError [Pandoc.Block]
+getBlocks = traverse assertBlock
 
 assertBlock :: BlockOrInlines -> Either PandocError Pandoc.Block
 assertBlock (BlockElement block) = Right block
