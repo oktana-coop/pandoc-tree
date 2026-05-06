@@ -1,9 +1,9 @@
 {-# LANGUAGE InstanceSigs #-}
 
-module DocTree.Common (BlockNode (..), TextSpan (..), Mark (..), LinkMark (..), InlineSpan (..), NoteId (..)) where
+module DocTree.Common (BlockNode (..), TextSpan (..), Mark (..), LinkMark (..), InlineSpan (..), Image (..), NoteId (..)) where
 
 import qualified Data.Text as T
-import Text.Pandoc.Definition as Pandoc (Attr, Block (..), Target)
+import Text.Pandoc.Definition as Pandoc (Attr, Block (..), Inline, Target)
 
 newtype NoteId = NoteId T.Text deriving (Show, Eq, Ord)
 
@@ -19,7 +19,13 @@ data Mark = EmphMark | StrongMark | LinkMark LinkMark | CodeMark deriving (Show,
 
 data TextSpan = TextSpan {value :: T.Text, marks :: [Mark]} deriving (Show, Eq, Ord)
 
-data InlineSpan = InlineText TextSpan | NoteRef NoteId deriving (Show, Eq, Ord)
+data Image = Image Pandoc.Attr [Pandoc.Inline] Pandoc.Target deriving (Show, Eq)
+
+instance Ord Image where
+  compare :: Image -> Image -> Ordering
+  compare (Image _ _ target1) (Image _ _ target2) = compare target1 target2
+
+data InlineSpan = InlineText TextSpan | NoteRef NoteId | InlineImage Image deriving (Show, Eq, Ord)
 
 instance Semigroup TextSpan where
   (<>) (TextSpan value1 marks1) (TextSpan value2 marks2) = TextSpan (value1 <> value2) (marks1 <> marks2)

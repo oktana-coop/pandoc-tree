@@ -3,20 +3,23 @@
 module GroupInlinesTreeTest (tests) where
 
 import Data.Tree (Tree (Node))
-import qualified DocTree.Common as RichText (LinkMark (..), Mark (..), TextSpan (..))
+import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
 import DocTree.GroupedInlines (BlockNode (..), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..), toPandoc, toTree)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hspec (testSpec)
 import Text.Pandoc (runIOorExplode)
-import Text.Pandoc.Builder as Pandoc (Block (..), Inline (..), doc, fromList, link, para, str, strong, toList)
+import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
 import Text.Pandoc.Definition (nullAttr, nullMeta)
 
 treePandocBlockNode :: Pandoc.Block -> DocNode
 treePandocBlockNode = TreeNode . BlockNode . PandocBlock
 
-treeInlineNode :: [RichText.TextSpan] -> DocNode
-treeInlineNode = TreeNode . InlineNode . InlineContent . (fmap InlineText)
+treeTextSpansNode :: [RichText.TextSpan] -> DocNode
+treeTextSpansNode = TreeNode . InlineNode . InlineContent . (fmap InlineText)
+
+treeInlineSpansNode :: [InlineSpan] -> DocNode
+treeInlineSpansNode = TreeNode . InlineNode . InlineContent
 
 tests :: IO TestTree
 tests = do
@@ -49,7 +52,7 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [RichText.TextSpan "A heading 1" []]
                       )
                       []
@@ -57,7 +60,7 @@ spec = do
                 Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [RichText.TextSpan "A paragraph" []]
                       )
                       []
@@ -65,7 +68,7 @@ spec = do
                 Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [RichText.TextSpan "Another paragraph" []]
                       )
                       []
@@ -96,7 +99,7 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [ RichText.TextSpan "Some plain text followed by " [],
                             RichText.TextSpan "strong text" [RichText.StrongMark],
                             RichText.TextSpan " and a link: " [],
@@ -128,11 +131,112 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [ RichText.TextSpan "v2" [RichText.StrongMark, RichText.LinkMark $ RichText.Link nullAttr ("https://v2editor.com/", "v2")]
                           ]
                       )
                       []
+                  ]
+              ]
+
+      toTree input `shouldBe` expected
+
+    it "handles a paragraph containing an inline image" $ do
+      let input =
+            Pandoc.doc $
+              fromList $
+                [Pandoc.Para [Pandoc.Image nullAttr [Pandoc.Str "alt text"] ("img.png", "the title")]]
+
+          expected =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Para [])
+                  [ Node
+                      (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt text"] ("img.png", "the title"))])
+                      []
+                  ]
+              ]
+
+      toTree input `shouldBe` expected
+
+    it "handles a paragraph mixing text and an inline image" $ do
+      let input =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Para
+                    [ Pandoc.Str "before",
+                      Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""),
+                      Pandoc.Str "after"
+                    ]
+                ]
+
+          expected =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Para [])
+                  [ Node
+                      ( treeInlineSpansNode
+                          [ InlineText $ RichText.TextSpan "before" [],
+                            InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")),
+                            InlineText $ RichText.TextSpan "after" []
+                          ]
+                      )
+                      []
+                  ]
+              ]
+
+      toTree input `shouldBe` expected
+
+    it "handles a figure with an image body and no caption" $ do
+      let input =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Figure
+                    nullAttr
+                    emptyCaption
+                    [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
+                ]
+
+          expected =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
+                  [ Node
+                      (treePandocBlockNode $ Pandoc.Plain [])
+                      [ Node
+                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                          []
+                      ]
+                  ]
+              ]
+
+      toTree input `shouldBe` expected
+
+    it "handles a figure with an image body and a caption" $ do
+      let figureCaption = Pandoc.Caption Nothing [Pandoc.Plain [Pandoc.Str "the caption"]]
+          input =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Figure
+                    nullAttr
+                    figureCaption
+                    [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
+                ]
+
+          expected =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr figureCaption [])
+                  [ Node
+                      (treePandocBlockNode $ Pandoc.Plain [])
+                      [ Node
+                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                          []
+                      ]
                   ]
               ]
 
@@ -153,7 +257,7 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [RichText.TextSpan "A heading 1" []]
                       )
                       []
@@ -161,7 +265,7 @@ spec = do
                 Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [RichText.TextSpan "A paragraph" []]
                       )
                       []
@@ -169,7 +273,7 @@ spec = do
                 Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [RichText.TextSpan "Another paragraph" []]
                       )
                       []
@@ -194,7 +298,7 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [ RichText.TextSpan "Some plain text followed by " [],
                             RichText.TextSpan "strong text" [RichText.StrongMark],
                             RichText.TextSpan " and a link: " [],
@@ -230,7 +334,7 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Para [])
                   [ Node
-                      ( treeInlineNode $
+                      ( treeTextSpansNode $
                           [ RichText.TextSpan "v2" [RichText.StrongMark, RichText.LinkMark $ RichText.Link nullAttr ("https://v2editor.com/", "v2")]
                           ]
                       )
@@ -249,6 +353,111 @@ spec = do
                             [ toList $ Pandoc.strong $ Pandoc.link "https://v2editor.com/" "v2" $ Pandoc.str "v2"
                             ]
                   ]
+
+      output <- runIOorExplode $ toPandoc input
+      output `shouldBe` expected
+
+    it "handles a paragraph containing an inline image" $ do
+      let input =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Para [])
+                  [ Node
+                      (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt text"] ("img.png", "the title"))])
+                      []
+                  ]
+              ]
+
+          expected =
+            Pandoc.doc $
+              fromList $
+                [Pandoc.Para [Pandoc.Image nullAttr [Pandoc.Str "alt text"] ("img.png", "the title")]]
+
+      output <- runIOorExplode $ toPandoc input
+      output `shouldBe` expected
+
+    it "handles a paragraph mixing text and an inline image" $ do
+      let input =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Para [])
+                  [ Node
+                      ( treeInlineSpansNode
+                          [ InlineText $ RichText.TextSpan "before" [],
+                            InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")),
+                            InlineText $ RichText.TextSpan "after" []
+                          ]
+                      )
+                      []
+                  ]
+              ]
+
+          expected =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Para
+                    [ Pandoc.Str "before",
+                      Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""),
+                      Pandoc.Str "after"
+                    ]
+                ]
+
+      output <- runIOorExplode $ toPandoc input
+      output `shouldBe` expected
+
+    it "handles a figure with an image body and no caption" $ do
+      let input =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
+                  [ Node
+                      (treePandocBlockNode $ Pandoc.Plain [])
+                      [ Node
+                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                          []
+                      ]
+                  ]
+              ]
+
+          expected =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Figure
+                    nullAttr
+                    emptyCaption
+                    [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
+                ]
+
+      output <- runIOorExplode $ toPandoc input
+      output `shouldBe` expected
+
+    it "handles a figure with an image body and a caption" $ do
+      let figureCaption = Pandoc.Caption Nothing [Pandoc.Plain [Pandoc.Str "the caption"]]
+          input =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr figureCaption [])
+                  [ Node
+                      (treePandocBlockNode $ Pandoc.Plain [])
+                      [ Node
+                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                          []
+                      ]
+                  ]
+              ]
+
+          expected =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Figure
+                    nullAttr
+                    figureCaption
+                    [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
+                ]
 
       output <- runIOorExplode $ toPandoc input
       output `shouldBe` expected

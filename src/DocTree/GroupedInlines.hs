@@ -7,7 +7,7 @@ import Control.Monad.State (State, get, modify, runState)
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), foldTree, unfoldForestM, unfoldTreeM)
-import DocTree.Common (BlockNode (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
+import DocTree.Common (BlockNode (..), Image (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
 import Text.Pandoc (PandocError (PandocSyntaxMapError), nullMeta)
 import Text.Pandoc.Builder as Pandoc
   ( Block (..),
@@ -15,6 +15,8 @@ import Text.Pandoc.Builder as Pandoc
     Pandoc,
     code,
     emph,
+    fromList,
+    imageWith,
     linkWith,
     singleton,
     str,
@@ -118,6 +120,7 @@ inlineToSpans inline = case inline of
   Pandoc.Link attrs inlines target -> do
     wrappedSpans <- pandocInlinesToSpans inlines
     return $ addMark (LinkMark $ DocTree.Common.Link attrs target) wrappedSpans
+  Pandoc.Image attrs altInlines target -> return [InlineImage $ DocTree.Common.Image attrs altInlines target]
   -- TODO: Handle code attrs
   Pandoc.Code _ s -> return [InlineText $ TextSpan s [CodeMark]]
   Pandoc.Note noteBlocks -> do
@@ -221,6 +224,8 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
             Right $ singleton $ Pandoc.Note noteContentBlocks
           Nothing -> Left $ PandocSyntaxMapError "Error in mapping: Found orphan note ref"
         inlineSpanToPandocInlines (InlineText textSpan) = Right $ convertTextSpan textSpan
+        inlineSpanToPandocInlines (InlineImage (DocTree.Common.Image attrs altInlines (url, title))) =
+          Right $ Pandoc.imageWith attrs url title (Pandoc.fromList altInlines)
 
     mapToChildBlocks :: [[Either PandocError BlockOrInlines]] -> Either PandocError [[Pandoc.Block]]
     mapToChildBlocks children = (traverse . traverse) (>>= assertBlock) children
