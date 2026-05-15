@@ -3,8 +3,8 @@
 module GroupInlinesTreeTest (tests) where
 
 import Data.Tree (Tree (Node))
-import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
-import DocTree.GroupedInlines (BlockNode (..), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..), toPandoc, toTree)
+import qualified DocTree.Common as RichText (BlockNode (Caption, FigureContent), Image (..), LinkMark (..), Mark (..), TextSpan (..))
+import DocTree.GroupedInlines (BlockNode (PandocBlock), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..), toPandoc, toTree)
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.Hspec (testSpec)
@@ -14,6 +14,12 @@ import Text.Pandoc.Definition (nullAttr, nullMeta)
 
 treePandocBlockNode :: Pandoc.Block -> DocNode
 treePandocBlockNode = TreeNode . BlockNode . PandocBlock
+
+treeCaptionNode :: DocNode
+treeCaptionNode = TreeNode (BlockNode (RichText.Caption (Pandoc.Caption Nothing [])))
+
+treeFigureContentNode :: DocNode
+treeFigureContentNode = TreeNode (BlockNode (RichText.FigureContent []))
 
 treeTextSpansNode :: [RichText.TextSpan] -> DocNode
 treeTextSpansNode = TreeNode . InlineNode . InlineContent . (fmap InlineText)
@@ -205,10 +211,13 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                   [ Node
-                      (treePandocBlockNode $ Pandoc.Plain [])
+                      treeFigureContentNode
                       [ Node
-                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
-                          []
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node
+                              (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                              []
+                          ]
                       ]
                   ]
               ]
@@ -216,13 +225,12 @@ spec = do
       toTree input `shouldBe` expected
 
     it "handles a figure with an image body and a caption" $ do
-      let figureCaption = Pandoc.Caption Nothing [Pandoc.Plain [Pandoc.Str "the caption"]]
-          input =
+      let input =
             Pandoc.doc $
               fromList $
                 [ Pandoc.Figure
                     nullAttr
-                    figureCaption
+                    (Pandoc.Caption Nothing [Pandoc.Plain [Pandoc.Str "the caption"]])
                     [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
                 ]
 
@@ -230,12 +238,67 @@ spec = do
             Node
               (Root nullMeta)
               [ Node
-                  (treePandocBlockNode $ Pandoc.Figure nullAttr figureCaption [])
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                   [ Node
-                      (treePandocBlockNode $ Pandoc.Plain [])
+                      treeFigureContentNode
                       [ Node
-                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
-                          []
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node
+                              (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                              []
+                          ]
+                      ],
+                    Node
+                      treeCaptionNode
+                      [ Node
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node (treeTextSpansNode [RichText.TextSpan "the caption" []]) []
+                          ]
+                      ]
+                  ]
+              ]
+
+      toTree input `shouldBe` expected
+
+    it "lifts a multi-block caption to children of a single Caption sibling" $ do
+      let input =
+            Pandoc.doc $
+              fromList $
+                [ Pandoc.Figure
+                    nullAttr
+                    ( Pandoc.Caption
+                        Nothing
+                        [ Pandoc.Para [Pandoc.Str "first"],
+                          Pandoc.Para [Pandoc.Str "second"]
+                        ]
+                    )
+                    [Pandoc.Plain [Pandoc.Image nullAttr [] ("img.png", "")]]
+                ]
+
+          expected =
+            Node
+              (Root nullMeta)
+              [ Node
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
+                  [ Node
+                      treeFigureContentNode
+                      [ Node
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node
+                              (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [] ("img.png", ""))])
+                              []
+                          ]
+                      ],
+                    Node
+                      treeCaptionNode
+                      [ Node
+                          (treePandocBlockNode $ Pandoc.Para [])
+                          [ Node (treeTextSpansNode [RichText.TextSpan "first" []]) []
+                          ],
+                        Node
+                          (treePandocBlockNode $ Pandoc.Para [])
+                          [ Node (treeTextSpansNode [RichText.TextSpan "second" []]) []
+                          ]
                       ]
                   ]
               ]
@@ -414,10 +477,13 @@ spec = do
               [ Node
                   (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                   [ Node
-                      (treePandocBlockNode $ Pandoc.Plain [])
+                      treeFigureContentNode
                       [ Node
-                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
-                          []
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node
+                              (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                              []
+                          ]
                       ]
                   ]
               ]
@@ -435,17 +501,26 @@ spec = do
       output `shouldBe` expected
 
     it "handles a figure with an image body and a caption" $ do
-      let figureCaption = Pandoc.Caption Nothing [Pandoc.Plain [Pandoc.Str "the caption"]]
-          input =
+      let input =
             Node
               (Root nullMeta)
               [ Node
-                  (treePandocBlockNode $ Pandoc.Figure nullAttr figureCaption [])
+                  (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                   [ Node
-                      (treePandocBlockNode $ Pandoc.Plain [])
+                      treeFigureContentNode
                       [ Node
-                          (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
-                          []
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node
+                              (treeInlineSpansNode [InlineImage (RichText.Image nullAttr [Pandoc.Str "alt"] ("img.png", ""))])
+                              []
+                          ]
+                      ],
+                    Node
+                      treeCaptionNode
+                      [ Node
+                          (treePandocBlockNode $ Pandoc.Plain [])
+                          [ Node (treeTextSpansNode [RichText.TextSpan "the caption" []]) []
+                          ]
                       ]
                   ]
               ]
@@ -455,7 +530,7 @@ spec = do
               fromList $
                 [ Pandoc.Figure
                     nullAttr
-                    figureCaption
+                    (Pandoc.Caption Nothing [Pandoc.Plain [Pandoc.Str "the caption"]])
                     [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
                 ]
 

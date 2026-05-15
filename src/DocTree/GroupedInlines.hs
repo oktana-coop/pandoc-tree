@@ -4,17 +4,19 @@ module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode (..),
 
 import Control.Monad.Except (throwError)
 import Control.Monad.State (State, get, modify, runState)
+import Data.List (partition)
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), foldTree, unfoldForestM, unfoldTreeM)
 import DocTree.Common (BlockNode (..), Image (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
 import Text.Pandoc (PandocError (PandocSyntaxMapError), nullMeta)
-import Text.Pandoc.Builder as Pandoc
+import qualified Text.Pandoc.Builder as Pandoc
   ( Block (..),
     Inlines,
     Pandoc,
     code,
     emph,
+    emptyCaption,
     fromList,
     imageWith,
     linkWith,
@@ -24,7 +26,7 @@ import Text.Pandoc.Builder as Pandoc
     toList,
   )
 import Text.Pandoc.Class (PandocMonad)
-import Text.Pandoc.Definition as Pandoc (Inline (..), Meta (..), Pandoc (..))
+import qualified Text.Pandoc.Definition as Pandoc (Caption (..), Inline (..), Meta (..), Pandoc (..))
 import Utils.Sequence (firstValue)
 
 data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
@@ -76,13 +78,23 @@ blockTreeNodeUnfolder (PandocBlock block) = case block of
   Pandoc.BulletList items -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BulletList) [], map (BlockNode . ListItem) items)
   Pandoc.OrderedList attrs items -> return (TreeNode $ BlockNode $ PandocBlock $ Pandoc.OrderedList attrs [], map (BlockNode . ListItem) items)
   Pandoc.BlockQuote children -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BlockQuote) [], map (BlockNode . PandocBlock) children)
-  Pandoc.Figure attr caption children -> return ((TreeNode . BlockNode . PandocBlock) $ Pandoc.Figure attr caption [], map (BlockNode . PandocBlock) children)
+  -- Figure, FigureContent and Caption are separate tree nodes.
+  Pandoc.Figure attr cap children ->
+    return
+      ( (TreeNode . BlockNode . PandocBlock) $ Pandoc.Figure attr Pandoc.emptyCaption [],
+        [BlockNode (FigureContent children)] ++ [BlockNode (Caption cap) | not (isEmptyCaption cap)]
+      )
+    where
+      isEmptyCaption (Pandoc.Caption Nothing []) = True
+      isEmptyCaption _ = False
   Pandoc.Div attr children -> return ((TreeNode . BlockNode . PandocBlock) $ Pandoc.Div attr [], map (BlockNode . PandocBlock) children)
   Pandoc.HorizontalRule -> return (TreeNode . BlockNode . PandocBlock $ Pandoc.HorizontalRule, [])
   -- TODO: Handle Table, LineBlock and DefinitionList
   _ -> undefined
 blockTreeNodeUnfolder (ListItem children) = return ((TreeNode . BlockNode . ListItem) [], map (BlockNode . PandocBlock) children)
 blockTreeNodeUnfolder (NoteContent noteId children) = return (TreeNode $ BlockNode $ NoteContent noteId [], map (BlockNode . PandocBlock) children)
+blockTreeNodeUnfolder (Caption (Pandoc.Caption short blocks)) = return (TreeNode . BlockNode . Caption $ Pandoc.Caption short [], map (BlockNode . PandocBlock) blocks)
+blockTreeNodeUnfolder (FigureContent blocks) = return (TreeNode . BlockNode . FigureContent $ [], map (BlockNode . PandocBlock) blocks)
 
 buildInlineNode :: [Pandoc.Inline] -> NotesState TreeNode
 buildInlineNode inlines = fmap (InlineNode . InlineContent) $ pandocInlinesToSpans inlines
@@ -159,7 +171,7 @@ addMark mark spans = fmap (addMarkToSpan mark) spans
 inlineTreeNodeUnfolder :: InlineNode -> (DocNode, [TreeNode])
 inlineTreeNodeUnfolder inlineNode = (TreeNode $ InlineNode inlineNode, [])
 
-data BlockOrInlines = BlockElement Pandoc.Block | InlineElement Pandoc.Inlines
+data PandocElement = BlockElement Pandoc.Block | InlineElement Pandoc.Inlines | CaptionElement Pandoc.Caption
 
 toPandoc :: (PandocMonad m) => Tree DocNode -> m Pandoc.Pandoc
 toPandoc tree = either throwError (wrapToPandocWithMeta tree) (treeToPandocBlocks tree)
@@ -169,12 +181,12 @@ toPandoc tree = either throwError (wrapToPandocWithMeta tree) (treeToPandocBlock
     wrapToPandocWithMeta _ = pure . (Pandoc.Pandoc nullMeta)
 
 treeToPandocBlocks :: Tree DocNode -> Either PandocError [Pandoc.Block]
-treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocBlockOrInlines noteContentsMap) tree) >>= getBlocks
+treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocElement noteContentsMap) tree) >>= getBlocks
   where
     noteContentsMap = buildNoteContentsMap tree
 
-treeNodeToPandocBlockOrInlines :: NoteContentsMap -> DocNode -> [[Either PandocError BlockOrInlines]] -> [Either PandocError BlockOrInlines]
-treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
+treeNodeToPandocElement :: NoteContentsMap -> DocNode -> [[Either PandocError PandocElement]] -> [Either PandocError PandocElement]
+treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
   Root _ -> concat childrenNodes
   -- TODO: Consider just concatenating children in the case of `Plain`.
   TreeNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Plain . Pandoc.toList) (concatChildrenInlines childrenNodes)]
@@ -184,21 +196,45 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
     [ do
         inlines <- concatChildrenInlines childrenNodes
         case firstInline inlines of
-          Just (Str text) -> Right $ BlockElement $ Pandoc.CodeBlock attr text
+          Just (Pandoc.Str text) -> Right $ BlockElement $ Pandoc.CodeBlock attr text
           _ -> Left $ PandocSyntaxMapError "Error in mapping: Could not extract code block text"
     ]
   TreeNode (BlockNode (PandocBlock (Pandoc.RawBlock format _))) ->
     [ do
         inlines <- concatChildrenInlines childrenNodes
         case firstInline inlines of
-          Just (Str text) -> Right $ BlockElement $ Pandoc.RawBlock format text
+          Just (Pandoc.Str text) -> Right $ BlockElement $ Pandoc.RawBlock format text
           _ -> Left $ PandocSyntaxMapError "Error in mapping: Could not extract raw block text"
     ]
   TreeNode (BlockNode (ListItem _)) -> concat childrenNodes
   TreeNode (BlockNode (PandocBlock (Pandoc.BulletList _))) -> [fmap (BlockElement . Pandoc.BulletList) (mapToChildBlocks childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.OrderedList attrs _))) -> [fmap (BlockElement . Pandoc.OrderedList attrs) (mapToChildBlocks childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.BlockQuote _))) -> [fmap (BlockElement . Pandoc.BlockQuote) (traverseAssertingChildIsBlock $ concat childrenNodes)]
-  TreeNode (BlockNode (PandocBlock (Pandoc.Figure attr caption _))) -> [fmap (BlockElement . Pandoc.Figure attr caption) (traverseAssertingChildIsBlock $ concat childrenNodes)]
+  TreeNode (BlockNode (PandocBlock (Pandoc.Figure attr _ _))) ->
+    -- The Figure's own caption payload is empty in the tree; the real caption arrives as a child.
+    [ do
+        let (captionItems, blockItems) = partition isCaptionItem (concat childrenNodes)
+        figCaption <- buildFigureCaption captionItems
+        figBlocks <- traverseAssertingChildIsBlock blockItems
+        Right $ BlockElement $ Pandoc.Figure attr figCaption figBlocks
+    ]
+    where
+      isCaptionItem (Right (CaptionElement _)) = True
+      isCaptionItem _ = False
+
+      buildFigureCaption :: [Either PandocError PandocElement] -> Either PandocError Pandoc.Caption
+      buildFigureCaption [] = Right Pandoc.emptyCaption
+      buildFigureCaption [item] = item >>= assertCaption
+      buildFigureCaption _ = Left $ PandocSyntaxMapError "Error in mapping: figure has more than one caption"
+  -- Caption blocks live as tree children; the payload slot is always empty here.
+  -- Re-emit a `CaptionElement` so the parent Figure/Table folder can pick it out of its children.
+  TreeNode (BlockNode (Caption (Pandoc.Caption short _))) ->
+    [ do
+        childBlocks <- traverseAssertingChildIsBlock (concat childrenNodes)
+        Right $ CaptionElement $ Pandoc.Caption short childBlocks
+    ]
+  -- FigureContent flows its children up to the Figure folder, symmetric with ListItem.
+  TreeNode (BlockNode (FigureContent _)) -> concat childrenNodes
   TreeNode (BlockNode (PandocBlock (Pandoc.Div attr _))) -> [fmap (BlockElement . Pandoc.Div attr) (traverseAssertingChildIsBlock $ concat childrenNodes)]
   TreeNode (BlockNode (PandocBlock (Pandoc.HorizontalRule))) -> [Right $ BlockElement $ Pandoc.HorizontalRule]
   -- Note content subtrees will be mapped to Pandoc notes when handling the note refs.
@@ -207,7 +243,7 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
   -- TODO: Iteratively handle more blocks
   _ -> undefined
   where
-    concatChildrenInlines :: [[Either PandocError BlockOrInlines]] -> Either PandocError Pandoc.Inlines
+    concatChildrenInlines :: [[Either PandocError PandocElement]] -> Either PandocError Pandoc.Inlines
     concatChildrenInlines children = concatInlines $ map (>>= assertInlines) $ concat children
       where
         concatInlines :: [Either PandocError Pandoc.Inlines] -> Either PandocError Pandoc.Inlines
@@ -221,16 +257,16 @@ treeNodeToPandocBlockOrInlines noteContentsMap node childrenNodes = case node of
           Just noteContentsSubtree -> do
             noteContentBlockLists <- traverse treeToPandocBlocks noteContentsSubtree
             let noteContentBlocks = concat noteContentBlockLists
-            Right $ singleton $ Pandoc.Note noteContentBlocks
+            Right $ Pandoc.singleton $ Pandoc.Note noteContentBlocks
           Nothing -> Left $ PandocSyntaxMapError "Error in mapping: Found orphan note ref"
         inlineSpanToPandocInlines (InlineText textSpan) = Right $ convertTextSpan textSpan
         inlineSpanToPandocInlines (InlineImage (DocTree.Common.Image attrs altInlines (url, title))) =
           Right $ Pandoc.imageWith attrs url title (Pandoc.fromList altInlines)
 
-    mapToChildBlocks :: [[Either PandocError BlockOrInlines]] -> Either PandocError [[Pandoc.Block]]
+    mapToChildBlocks :: [[Either PandocError PandocElement]] -> Either PandocError [[Pandoc.Block]]
     mapToChildBlocks children = (traverse . traverse) (>>= assertBlock) children
 
-    traverseAssertingChildIsBlock :: [Either PandocError BlockOrInlines] -> Either PandocError [Pandoc.Block]
+    traverseAssertingChildIsBlock :: [Either PandocError PandocElement] -> Either PandocError [Pandoc.Block]
     traverseAssertingChildIsBlock children = traverse (>>= assertBlock) children
 
     firstInline :: Pandoc.Inlines -> Maybe Pandoc.Inline
@@ -252,19 +288,26 @@ markToInlines mark = case mark of
   LinkMark (DocTree.Common.Link attrs (url, title)) -> Pandoc.linkWith attrs url title
   CodeMark -> Pandoc.code . concatStrInlines
     where
-      concatStrInlines :: Inlines -> T.Text
+      concatStrInlines :: Pandoc.Inlines -> T.Text
       concatStrInlines inlines = T.concat [t | Pandoc.Str t <- Pandoc.toList inlines]
 
-getBlocks :: [BlockOrInlines] -> Either PandocError [Pandoc.Block]
+getBlocks :: [PandocElement] -> Either PandocError [Pandoc.Block]
 getBlocks = traverse assertBlock
 
-assertBlock :: BlockOrInlines -> Either PandocError Pandoc.Block
+assertBlock :: PandocElement -> Either PandocError Pandoc.Block
 assertBlock (BlockElement block) = Right block
 assertBlock (InlineElement _) = Left $ PandocSyntaxMapError "Error in mapping: found orphan inline node"
+assertBlock (CaptionElement _) = Left $ PandocSyntaxMapError "Error in mapping: found orphan caption node"
 
-assertInlines :: BlockOrInlines -> Either PandocError Pandoc.Inlines
+assertInlines :: PandocElement -> Either PandocError Pandoc.Inlines
 assertInlines (BlockElement _) = Left $ PandocSyntaxMapError "Error in mapping: found block node in inline node slot"
 assertInlines (InlineElement inlines) = Right $ inlines
+assertInlines (CaptionElement _) = Left $ PandocSyntaxMapError "Error in mapping: found caption node in inline node slot"
+
+assertCaption :: PandocElement -> Either PandocError Pandoc.Caption
+assertCaption (CaptionElement c) = Right c
+assertCaption (BlockElement _) = Left $ PandocSyntaxMapError "Error in mapping: expected caption, found block"
+assertCaption (InlineElement _) = Left $ PandocSyntaxMapError "Error in mapping: expected caption, found inline"
 
 type NoteContentsMap = M.Map NoteId ([Tree DocNode])
 

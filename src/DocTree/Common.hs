@@ -3,11 +3,11 @@
 module DocTree.Common (BlockNode (..), TextSpan (..), Mark (..), LinkMark (..), InlineSpan (..), Image (..), NoteId (..)) where
 
 import qualified Data.Text as T
-import Text.Pandoc.Definition as Pandoc (Attr, Block (..), Inline, Target)
+import Text.Pandoc.Definition as Pandoc (Attr, Block (..), Caption, Inline, Target)
 
 newtype NoteId = NoteId T.Text deriving (Show, Eq, Ord)
 
-data BlockNode = PandocBlock Pandoc.Block | ListItem [Pandoc.Block] | NoteContent NoteId [Pandoc.Block] deriving (Show, Eq)
+data BlockNode = PandocBlock Pandoc.Block | ListItem [Pandoc.Block] | NoteContent NoteId [Pandoc.Block] | Caption Pandoc.Caption | FigureContent [Pandoc.Block] deriving (Show, Eq)
 
 data LinkMark = Link Pandoc.Attr Pandoc.Target deriving (Show, Eq)
 
