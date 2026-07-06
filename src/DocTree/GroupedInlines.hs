@@ -26,7 +26,7 @@ import qualified Text.Pandoc.Builder as Pandoc
     toList,
   )
 import Text.Pandoc.Class (PandocMonad)
-import qualified Text.Pandoc.Definition as Pandoc (Caption (..), Inline (..), Meta (..), Pandoc (..))
+import qualified Text.Pandoc.Definition as Pandoc (Caption (..), Inline (..), Meta (..), Pandoc (..), QuoteType (..))
 import Utils.Sequence (firstValue)
 
 data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
@@ -123,12 +123,18 @@ inlineToSpans :: Pandoc.Inline -> NotesState [InlineSpan]
 inlineToSpans inline = case inline of
   Pandoc.Str s -> return [InlineText $ TextSpan s []]
   Pandoc.Space -> return [InlineText $ TextSpan (T.pack " ") []]
+  Pandoc.SoftBreak -> return [InlineText $ TextSpan (T.pack " ") []]
+  Pandoc.LineBreak -> return [InlineText $ TextSpan (T.pack "\n") []]
   Pandoc.Strong inlines -> do
     wrappedSpans <- pandocInlinesToSpans inlines
     return $ addMark StrongMark wrappedSpans
   Pandoc.Emph inlines -> do
     wrappedSpans <- pandocInlinesToSpans inlines
     return $ addMark EmphMark wrappedSpans
+  Pandoc.Quoted quoteType inlines -> do
+    innerSpans <- pandocInlinesToSpans inlines
+    let (openQuote, closeQuote) = quoteChars quoteType
+    return $ [InlineText $ TextSpan openQuote []] <> innerSpans <> [InlineText $ TextSpan closeQuote []]
   Pandoc.Link attrs inlines target -> do
     wrappedSpans <- pandocInlinesToSpans inlines
     return $ addMark (LinkMark $ DocTree.Common.Link attrs target) wrappedSpans
@@ -157,8 +163,13 @@ inlineToSpans inline = case inline of
 
     -- Return note ref node
     return [NoteRef noteId]
-  -- TODO: Handle other inline elements
+  -- TODO: Handle Math, RawInline, Cite and Span; model Strikeout, Underline,
+  -- Superscript, Subscript and SmallCaps as marks.
   _ -> return []
+
+quoteChars :: Pandoc.QuoteType -> (T.Text, T.Text)
+quoteChars Pandoc.SingleQuote = (T.pack "\8216", T.pack "\8217") -- ‘ ’
+quoteChars Pandoc.DoubleQuote = (T.pack "\8220", T.pack "\8221") -- “ ”
 
 addMark :: Mark -> [InlineSpan] -> [InlineSpan]
 addMark mark spans = fmap (addMarkToSpan mark) spans

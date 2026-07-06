@@ -1,7 +1,17 @@
-import GroupInlinesTreeTest (tests)
+import qualified GroupedInlinesTree.PandocToTree as PandocToTree (tests)
+import qualified GroupedInlinesTree.RoundTrip as RoundTrip (tests)
+import qualified GroupedInlinesTree.TreeToPandoc as TreeToPandoc (tests)
 import Test.Tasty (defaultMain, testGroup)
 
 main :: IO ()
 main = do
-  groupedInlinesTreeTests <- GroupInlinesTreeTest.tests
-  defaultMain $ testGroup "Tests" [groupedInlinesTreeTests]
+  pandocToTreeTests <- PandocToTree.tests
+  treeToPandocTests <- TreeToPandoc.tests
+  roundTripTests <- RoundTrip.tests
+  defaultMain $
+    testGroup
+      "Tests"
+      [ testGroup
+          "Grouped Inlines Tree"
+          [pandocToTreeTests, treeToPandocTests, roundTripTests]
+      ]

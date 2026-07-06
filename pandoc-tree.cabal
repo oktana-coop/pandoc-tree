@@ -47,7 +47,10 @@ test-suite pandoc-tree-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      GroupInlinesTreeTest
+      GroupedInlinesTree.PandocToTree
+      GroupedInlinesTree.RoundTrip
+      GroupedInlinesTree.TreeToPandoc
+      GroupedInlinesTree.Utils
       Paths_pandoc_tree
   hs-source-dirs:
       test
