@@ -42,3 +42,36 @@ spec = do
       writeMarkdown def {writerExtensions = smartExtensions, writerWrapText = WrapPreserve} roundTripped
 
     output `shouldBe` normalized
+
+  -- Blocks without a dedicated tree shape (tables, line blocks, definition lists)
+  -- are kept intact as tree leaves, so the tree round trip must be a no-op.
+  -- The expectation is derived by writing the directly-read AST, which keeps the
+  -- assertion independent of the writer's formatting choices.
+  it "round-trips a document containing a table unchanged" $ do
+    let markdown = "Intro paragraph.\n\n| Name | Version |\n|------|---------|\n| foo | 1.0 |\n\nOutro paragraph.\n" :: T.Text
+
+    (expected, output) <- roundTripAgainstDirectWrite markdown
+    output `shouldBe` expected
+
+  it "round-trips a document containing a line block unchanged" $ do
+    let markdown = "| first line\n| second line\n" :: T.Text
+
+    (expected, output) <- roundTripAgainstDirectWrite markdown
+    output `shouldBe` expected
+
+  it "round-trips a document containing a definition list unchanged" $ do
+    let markdown = "term\n: definition\n" :: T.Text
+
+    (expected, output) <- roundTripAgainstDirectWrite markdown
+    output `shouldBe` expected
+
+-- Reads the markdown, then writes it both directly and after a tree round trip.
+roundTripAgainstDirectWrite :: T.Text -> IO (T.Text, T.Text)
+roundTripAgainstDirectWrite markdown = runIOorExplode $ do
+  pandoc <- readMarkdown def {readerExtensions = pandocExtensions} markdown
+  expected <- writeMarkdown writerOpts pandoc
+  roundTripped <- toPandoc $ toTree pandoc
+  output <- writeMarkdown writerOpts roundTripped
+  return (expected, output)
+  where
+    writerOpts = def {writerExtensions = pandocExtensions, writerWrapText = WrapPreserve}
