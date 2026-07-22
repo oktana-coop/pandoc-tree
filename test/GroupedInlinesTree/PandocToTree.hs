@@ -433,3 +433,16 @@ spec = do
             ]
 
     toTree input `shouldBe` expected
+
+  it "keeps a block without a dedicated tree shape (line block) as an intact leaf" $ do
+    let lineBlock = Pandoc.LineBlock [[Pandoc.Str "first line"], [Pandoc.Str "second line"]]
+        input = Pandoc.doc $ fromList [lineBlock]
+
+        -- Unlike the supported blocks above, the payload is kept in the node
+        -- (not modeled as children) so the block survives the round trip.
+        expected =
+          Node
+            (Root nullMeta)
+            [Node (treePandocBlockNode lineBlock) []]
+
+    toTree input `shouldBe` expected
