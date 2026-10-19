@@ -51,10 +51,27 @@ Root (Meta)
 
 Marks are only the default reason to start a new leaf. Because each span is its own node, the same "break a new leaf wherever a per-span property changes" rule generalizes to **any** per-span data a consumer wants to carry. When computing edits, for example, spans can be segmented by their marks _and_ by an edit operation (insert / delete / copy), so each leaf is a run that shares the same marks _and_ the same operation. This makes the leaf-text-spans tree a natural substrate for **diffing and other per-span annotations**, while the grouped-inlines tree stays focused on faithful representation and round-tripping.
 
+## Prerequisites
+
+Install GHC and [cabal](https://www.haskell.org/cabal/), e.g. with [GHCup](https://www.haskell.org/ghcup/). Use the GHC version that `with-compiler` names in `cabal.project`, and a cabal version that supports it.
+
 ## Testing
 
 Navigate to the project root folder and run the following command to build and run the tests:
 
 ```
-stack build --test
+cabal test
 ```
+
+## Dependency Versions
+
+The dependencies are solved from the state of the package index in `index-state` in `cabal.project`, and `cabal.project.freeze` pins their versions. Commit both with any change to the dependencies.
+
+After adding or removing a dependency, run `cabal freeze`.
+
+To upgrade the dependencies:
+
+1. Run `cabal update`, which prints the state it updated the index to.
+2. Set `index-state` in `cabal.project` to that time.
+3. Delete `cabal.project.freeze` and run `cabal freeze`.
+4. Build, run the tests, and commit `cabal.project` together with `cabal.project.freeze`.
