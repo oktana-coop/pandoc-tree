@@ -89,11 +89,10 @@ blockTreeNodeUnfolder (PandocBlock block) = case block of
       isEmptyCaption _ = False
   Pandoc.Div attr children -> return ((TreeNode . BlockNode . PandocBlock) $ Pandoc.Div attr [], map (BlockNode . PandocBlock) children)
   Pandoc.HorizontalRule -> return (TreeNode . BlockNode . PandocBlock $ Pandoc.HorizontalRule, [])
-  -- TODO: Give Table, LineBlock and DefinitionList dedicated tree shapes.
-  -- Until then, keep the whole block intact as a leaf (unlike the cases above,
-  -- the payload is *not* emptied) so it survives the round trip and consumers
-  -- can decide how to render or reject it instead of crashing the conversion.
-  unsupportedBlock -> return (TreeNode . BlockNode . PandocBlock $ unsupportedBlock, [])
+  -- Not modeled as trees yet, so kept whole, as leaves.
+  Pandoc.Table {} -> return (TreeNode . BlockNode $ PandocBlock block, [])
+  Pandoc.LineBlock _ -> return (TreeNode . BlockNode $ PandocBlock block, [])
+  Pandoc.DefinitionList _ -> return (TreeNode . BlockNode $ PandocBlock block, [])
 blockTreeNodeUnfolder (ListItem children) = return ((TreeNode . BlockNode . ListItem) [], map (BlockNode . PandocBlock) children)
 blockTreeNodeUnfolder (NoteContent noteId children) = return (TreeNode $ BlockNode $ NoteContent noteId [], map (BlockNode . PandocBlock) children)
 blockTreeNodeUnfolder (Caption (Pandoc.Caption short blocks)) = return (TreeNode . BlockNode . Caption $ Pandoc.Caption short [], map (BlockNode . PandocBlock) blocks)
@@ -254,9 +253,10 @@ treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
   -- Note content subtrees will be mapped to Pandoc notes when handling the note refs.
   TreeNode (BlockNode (NoteContent _ _)) -> []
   TreeNode (InlineNode (InlineContent inlineSpans)) -> (fmap . fmap) InlineElement $ inlineSpansToPandocInlines inlineSpans
-  -- Blocks without a dedicated tree shape (Table, LineBlock, DefinitionList) are
-  -- stored intact as leaves by the unfolder, so re-emit them unchanged.
-  TreeNode (BlockNode (PandocBlock block)) -> [Right $ BlockElement block]
+  -- Kept whole in the tree, as leaves.
+  TreeNode (BlockNode (PandocBlock block@(Pandoc.Table {}))) -> [Right $ BlockElement block]
+  TreeNode (BlockNode (PandocBlock block@(Pandoc.LineBlock _))) -> [Right $ BlockElement block]
+  TreeNode (BlockNode (PandocBlock block@(Pandoc.DefinitionList _))) -> [Right $ BlockElement block]
   where
     concatChildrenInlines :: [[Either PandocError PandocElement]] -> Either PandocError Pandoc.Inlines
     concatChildrenInlines children = concatInlines $ map (>>= assertInlines) $ concat children
