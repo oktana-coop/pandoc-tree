@@ -72,8 +72,8 @@ blockTreeNodeUnfolder (PandocBlock block) = case block of
   Pandoc.Header level attrs inlines -> do
     inlineNode <- buildInlineNode inlines
     return (TreeNode . BlockNode $ PandocBlock $ Pandoc.Header level attrs [], [inlineNode])
-  Pandoc.CodeBlock attrs text -> return (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs T.empty, [InlineNode $ InlineContent $ [InlineText $ TextSpan {value = text, marks = []}]])
-  Pandoc.RawBlock format text -> return (TreeNode . BlockNode . PandocBlock $ Pandoc.RawBlock format T.empty, [InlineNode $ InlineContent $ [InlineText $ TextSpan {value = text, marks = []}]])
+  Pandoc.CodeBlock attrs text -> return (TreeNode . BlockNode $ PandocBlock $ Pandoc.CodeBlock attrs T.empty, textToTreeNodes text)
+  Pandoc.RawBlock format text -> return (TreeNode . BlockNode . PandocBlock $ Pandoc.RawBlock format T.empty, textToTreeNodes text)
   Pandoc.BulletList items -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BulletList) [], map (BlockNode . ListItem) items)
   Pandoc.OrderedList attrs items -> return (TreeNode $ BlockNode $ PandocBlock $ Pandoc.OrderedList attrs [], map (BlockNode . ListItem) items)
   Pandoc.BlockQuote children -> return ((TreeNode . BlockNode . PandocBlock . Pandoc.BlockQuote) [], map (BlockNode . PandocBlock) children)
@@ -96,6 +96,9 @@ blockTreeNodeUnfolder (ListItem children) = return ((TreeNode . BlockNode . List
 blockTreeNodeUnfolder (NoteContent noteId children) = return (TreeNode $ BlockNode $ NoteContent noteId [], map (BlockNode . PandocBlock) children)
 blockTreeNodeUnfolder (Caption (Pandoc.Caption short blocks)) = return (TreeNode . BlockNode . Caption $ Pandoc.Caption short [], map (BlockNode . PandocBlock) blocks)
 blockTreeNodeUnfolder (FigureContent blocks) = return (TreeNode . BlockNode . FigureContent $ [], map (BlockNode . PandocBlock) blocks)
+
+textToTreeNodes :: T.Text -> [TreeNode]
+textToTreeNodes text = [InlineNode $ InlineContent [InlineText $ TextSpan {value = text, marks = []}] | not (T.null text)]
 
 buildInlineNode :: [Pandoc.Inline] -> NotesState TreeNode
 buildInlineNode inlines = fmap (InlineNode . InlineContent) $ pandocInlinesToSpans inlines
@@ -208,6 +211,7 @@ treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
     [ do
         inlines <- concatChildrenInlines childrenNodes
         case firstInline inlines of
+          Nothing -> Right $ BlockElement $ Pandoc.CodeBlock attr T.empty
           Just (Pandoc.Str text) -> Right $ BlockElement $ Pandoc.CodeBlock attr text
           _ -> Left $ MalformedTreeError "Could not extract code block text"
     ]
@@ -215,6 +219,7 @@ treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
     [ do
         inlines <- concatChildrenInlines childrenNodes
         case firstInline inlines of
+          Nothing -> Right $ BlockElement $ Pandoc.RawBlock format T.empty
           Just (Pandoc.Str text) -> Right $ BlockElement $ Pandoc.RawBlock format text
           _ -> Left $ MalformedTreeError "Could not extract raw block text"
     ]

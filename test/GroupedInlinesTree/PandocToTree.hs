@@ -446,3 +446,13 @@ spec = do
             [Node (treePandocBlockNode lineBlock) []]
 
     toTree input `shouldBe` expected
+
+  it "gives a code block with empty text no inline node" $ do
+    let input = Pandoc.doc $ fromList [CodeBlock nullAttr ""]
+
+        expected =
+          Node
+            (Root nullMeta)
+            [Node (treePandocBlockNode (CodeBlock nullAttr "")) []]
+
+    toTree input `shouldBe` expected

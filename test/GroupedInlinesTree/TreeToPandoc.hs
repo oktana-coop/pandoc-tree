@@ -249,6 +249,13 @@ spec = do
     output <- toPandocOrFail input
     output `shouldBe` expected
 
+  it "reads a code block without an inline node as one with empty text" $ do
+    let input = Node (Root nullMeta) [Node (treePandocBlockNode (CodeBlock nullAttr "")) []]
+        expected = Pandoc.doc $ fromList [CodeBlock nullAttr ""]
+
+    output <- toPandocOrFail input
+    output `shouldBe` expected
+
   it "fails with a malformed tree error for a caption outside a figure" $ do
     let input = Node (Root nullMeta) [Node treeCaptionNode []]
 
