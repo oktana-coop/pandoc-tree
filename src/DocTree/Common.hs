@@ -25,7 +25,13 @@ instance Ord Image where
   compare :: Image -> Image -> Ordering
   compare (Image _ _ target1) (Image _ _ target2) = compare target1 target2
 
-data InlineSpan = InlineText TextSpan | NoteRef NoteId | InlineImage Image deriving (Show, Eq, Ord)
+data InlineSpan
+  = InlineText TextSpan
+  | NoteRef NoteId
+  | InlineImage Image
+  | -- An inline the tree doesn't model yet, kept whole.
+    PandocInline Pandoc.Inline
+  deriving (Show, Eq, Ord)
 
 instance Semigroup TextSpan where
   (<>) (TextSpan value1 marks1) (TextSpan value2 marks2) = TextSpan (value1 <> value2) (marks1 <> marks2)

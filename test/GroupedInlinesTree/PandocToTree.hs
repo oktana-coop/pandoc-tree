@@ -9,7 +9,7 @@ import GroupedInlinesTree.Utils (treeCaptionNode, treeFigureContentNode, treeInl
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
-import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), QuoteType (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
+import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), MathType (..), QuoteType (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
 import Text.Pandoc.Definition (nullAttr, nullMeta)
 
 tests :: IO TestTree
@@ -454,5 +454,21 @@ spec = do
           Node
             (Root nullMeta)
             [Node (treePandocBlockNode (CodeBlock nullAttr "")) []]
+
+    toTree input `shouldBe` expected
+
+  it "keeps an inline it doesn't model whole" $ do
+    let input = Pandoc.doc $ fromList [Para [Str "Energy", Space, Math InlineMath "E = mc^2"]]
+
+        expected =
+          Node
+            (Root nullMeta)
+            [ Node
+                (treePandocBlockNode $ Pandoc.Para [])
+                [ Node
+                    (treeInlineSpansNode [InlineText (RichText.TextSpan "Energy " []), PandocInline (Math InlineMath "E = mc^2")])
+                    []
+                ]
+            ]
 
     toTree input `shouldBe` expected

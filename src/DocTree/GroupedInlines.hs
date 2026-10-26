@@ -167,9 +167,9 @@ inlineToSpans inline = case inline of
 
     -- Return note ref node
     return [NoteRef noteId]
-  -- TODO: Handle Math, RawInline, Cite and Span; model Strikeout, Underline,
-  -- Superscript, Subscript and SmallCaps as marks.
-  _ -> return []
+  -- Not modeled yet, so kept whole: Math, RawInline, Cite, Span, and Strikeout, Underline, Superscript, Subscript
+  -- and SmallCaps, which could become marks.
+  _ -> return [PandocInline inline]
 
 quoteChars :: Pandoc.QuoteType -> (T.Text, T.Text)
 quoteChars Pandoc.SingleQuote = (T.pack "\8216", T.pack "\8217") -- ‘ ’
@@ -281,6 +281,7 @@ treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
         inlineSpanToPandocInlines (InlineText textSpan) = Right $ convertTextSpan textSpan
         inlineSpanToPandocInlines (InlineImage (DocTree.Common.Image attrs altInlines (url, title))) =
           Right $ Pandoc.imageWith attrs url title (Pandoc.fromList altInlines)
+        inlineSpanToPandocInlines (PandocInline inline) = Right $ Pandoc.singleton inline
 
     mapToChildBlocks :: [[Either MalformedTreeError PandocElement]] -> Either MalformedTreeError [[Pandoc.Block]]
     mapToChildBlocks children = (traverse . traverse) (>>= assertBlock) children

@@ -47,6 +47,11 @@ spec = do
 
     roundTripMarkdown markdown `shouldReturn` markdown
 
+  it "round-trips inlines the tree doesn't model unchanged" $ do
+    let markdown = "Energy $E = mc^2$, ~~struck~~, x^2^, H~2~O, [a span]{.note} and `<b>`{=html}bold`</b>`{=html}.\n"
+
+    roundTripMarkdown markdown `shouldReturn` markdown
+
 -- Reads the markdown, takes the document through the tree and back, and writes it.
 roundTripMarkdown :: T.Text -> IO T.Text
 roundTripMarkdown markdown = do
