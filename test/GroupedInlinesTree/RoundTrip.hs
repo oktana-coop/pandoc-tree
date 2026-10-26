@@ -3,7 +3,8 @@
 module GroupedInlinesTree.RoundTrip (tests) where
 
 import qualified Data.Text as T
-import DocTree.GroupedInlines (toPandoc, toTree)
+import DocTree.GroupedInlines (toTree)
+import GroupedInlinesTree.Utils (toPandocOrFail)
 import Test.Hspec (Spec, it, shouldReturn)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
@@ -48,7 +49,7 @@ spec = do
 
 -- Reads the markdown, takes the document through the tree and back, and writes it.
 roundTripMarkdown :: T.Text -> IO T.Text
-roundTripMarkdown markdown = runIOorExplode $ do
-  pandoc <- readMarkdown def {readerExtensions = pandocExtensions} markdown
-  roundTripped <- toPandoc $ toTree pandoc
-  writeMarkdown def {writerExtensions = pandocExtensions, writerWrapText = WrapPreserve} roundTripped
+roundTripMarkdown markdown = do
+  pandoc <- runIOorExplode $ readMarkdown def {readerExtensions = pandocExtensions} markdown
+  roundTripped <- toPandocOrFail (toTree pandoc)
+  runIOorExplode $ writeMarkdown def {writerExtensions = pandocExtensions, writerWrapText = WrapPreserve} roundTripped

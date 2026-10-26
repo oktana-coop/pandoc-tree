@@ -4,12 +4,12 @@ module GroupedInlinesTree.TreeToPandoc (tests) where
 
 import Data.Tree (Tree (Node))
 import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
+import DocTree.Error (MalformedTreeError (..))
 import DocTree.GroupedInlines (DocNode (..), InlineSpan (..), toPandoc)
-import GroupedInlinesTree.Utils (treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
+import GroupedInlinesTree.Utils (toPandocOrFail, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
-import Text.Pandoc (runIOorExplode)
 import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
 import Text.Pandoc.Definition (nullAttr, nullMeta)
 
@@ -22,7 +22,7 @@ spec = do
     let input = Node (Root nullMeta) []
         expected = Pandoc.doc $ fromList []
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "handles a simple document with a heading and a couple of paragraphs" $ do
@@ -63,7 +63,7 @@ spec = do
                 Pandoc.Para [Pandoc.Str "Another paragraph"]
               ]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "assigns an inline node's children to the parent block" $ do
@@ -99,7 +99,7 @@ spec = do
                           ]
                 ]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "maintains marks order in case there is more than one" $ do
@@ -129,7 +129,7 @@ spec = do
                           ]
                 ]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "handles a paragraph containing an inline image" $ do
@@ -149,7 +149,7 @@ spec = do
             fromList $
               [Pandoc.Para [Pandoc.Image nullAttr [Pandoc.Str "alt text"] ("img.png", "the title")]]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "handles a paragraph mixing text and an inline image" $ do
@@ -179,7 +179,7 @@ spec = do
                   ]
               ]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "handles a figure with an image body and no caption" $ do
@@ -209,7 +209,7 @@ spec = do
                   [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
               ]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "handles a figure with an image body and a caption" $ do
@@ -246,5 +246,10 @@ spec = do
                   [Pandoc.Plain [Pandoc.Image nullAttr [Pandoc.Str "alt"] ("img.png", "")]]
               ]
 
-    output <- runIOorExplode $ toPandoc input
+    output <- toPandocOrFail input
     output `shouldBe` expected
+
+  it "fails with a malformed tree error for a caption outside a figure" $ do
+    let input = Node (Root nullMeta) [Node treeCaptionNode []]
+
+    toPandoc input `shouldBe` Left (MalformedTreeError "Found orphan caption node")

@@ -1,8 +1,12 @@
-module GroupedInlinesTree.Utils (treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode) where
+module GroupedInlinesTree.Utils (toPandocOrFail, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode) where
 
+import Data.Tree (Tree)
 import qualified DocTree.Common as RichText (BlockNode (Caption, FigureContent), TextSpan)
-import DocTree.GroupedInlines (BlockNode (PandocBlock), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..))
-import qualified Text.Pandoc.Builder as Pandoc (Block, Caption (..))
+import DocTree.GroupedInlines (BlockNode (PandocBlock), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..), toPandoc)
+import qualified Text.Pandoc.Builder as Pandoc (Block, Caption (..), Pandoc)
+
+toPandocOrFail :: Tree DocNode -> IO Pandoc.Pandoc
+toPandocOrFail = either (fail . show) pure . toPandoc
 
 treePandocBlockNode :: Pandoc.Block -> DocNode
 treePandocBlockNode = TreeNode . BlockNode . PandocBlock
