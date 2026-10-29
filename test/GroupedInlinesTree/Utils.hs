@@ -2,23 +2,23 @@ module GroupedInlinesTree.Utils (toPandocOrFail, treeCaptionNode, treeFigureCont
 
 import Data.Tree (Tree)
 import qualified DocTree.Common as RichText (BlockNode (Caption, FigureContent), TextSpan)
-import DocTree.GroupedInlines (BlockNode (PandocBlock), DocNode (..), InlineNode (..), InlineSpan (..), TreeNode (..), toPandoc)
+import DocTree.GroupedInlines (BlockNode (PandocBlock), DocNode (..), InlineNode (..), InlineSpan (..), RichTextNode (..), toPandoc)
 import qualified Text.Pandoc.Builder as Pandoc (Block, Caption (..), Pandoc)
 
 toPandocOrFail :: Tree DocNode -> IO Pandoc.Pandoc
 toPandocOrFail = either (fail . show) pure . toPandoc
 
 treePandocBlockNode :: Pandoc.Block -> DocNode
-treePandocBlockNode = TreeNode . BlockNode . PandocBlock
+treePandocBlockNode = RichTextNode . BlockNode . PandocBlock
 
 treeCaptionNode :: DocNode
-treeCaptionNode = TreeNode (BlockNode (RichText.Caption (Pandoc.Caption Nothing [])))
+treeCaptionNode = RichTextNode (BlockNode (RichText.Caption (Pandoc.Caption Nothing [])))
 
 treeFigureContentNode :: DocNode
-treeFigureContentNode = TreeNode (BlockNode (RichText.FigureContent []))
+treeFigureContentNode = RichTextNode (BlockNode (RichText.FigureContent []))
 
 treeTextSpansNode :: [RichText.TextSpan] -> DocNode
-treeTextSpansNode = TreeNode . InlineNode . InlineContent . (fmap InlineText)
+treeTextSpansNode = RichTextNode . InlineNode . InlineContent . (fmap InlineText)
 
 treeInlineSpansNode :: [InlineSpan] -> DocNode
-treeInlineSpansNode = TreeNode . InlineNode . InlineContent
+treeInlineSpansNode = RichTextNode . InlineNode . InlineContent
