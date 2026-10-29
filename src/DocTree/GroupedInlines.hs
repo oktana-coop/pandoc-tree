@@ -38,7 +38,7 @@ instance Monoid InlineNode where
 
 data RichTextNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
 
-data DocNode = Root Pandoc.Meta | RichTextNode RichTextNode deriving (Show, Eq)
+data DocNode = Root Pandoc.Meta | Body | RichTextNode RichTextNode deriving (Show, Eq)
 
 data NoteData = NoteData
   { noteCounter :: Int,
@@ -49,7 +49,7 @@ data NoteData = NoteData
 type NotesState = State NoteData
 
 toTree :: Pandoc.Pandoc -> Tree DocNode
-toTree (Pandoc.Pandoc meta blocks) = Node (Root meta) forestWithNotes
+toTree (Pandoc.Pandoc meta blocks) = Node (Root meta) [Node Body forestWithNotes]
   where
     blockNodes = map (BlockNode . PandocBlock) blocks
     (mainForest, notesState) = runState (unfoldForestM richTextNodeUnfolder blockNodes) initialState
@@ -203,6 +203,7 @@ treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocElement noteConte
 treeNodeToPandocElement :: NoteContentsMap -> DocNode -> [[Either MalformedTreeError PandocElement]] -> [Either MalformedTreeError PandocElement]
 treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
   Root _ -> concat childrenNodes
+  Body -> concat childrenNodes
   -- TODO: Consider just concatenating children in the case of `Plain`.
   RichTextNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Plain . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   RichTextNode (BlockNode (PandocBlock (Pandoc.Para _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]

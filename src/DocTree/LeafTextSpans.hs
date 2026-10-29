@@ -5,4 +5,4 @@ import Text.Pandoc.Definition as Pandoc (Meta (..))
 
 data RichTextNode = BlockNode BlockNode | InlineNode | InlineContent InlineSpan deriving (Show, Eq)
 
-data DocNode = Root Pandoc.Meta | RichTextNode RichTextNode deriving (Show, Eq)
+data DocNode = Root Pandoc.Meta | Body | RichTextNode RichTextNode deriving (Show, Eq)

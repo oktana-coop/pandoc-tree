@@ -6,7 +6,7 @@ import Data.Tree (Tree (Node))
 import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
 import DocTree.Error (MalformedTreeError (..))
 import DocTree.GroupedInlines (DocNode (..), InlineSpan (..), toPandoc)
-import GroupedInlinesTree.Utils (toPandocOrFail, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
+import GroupedInlinesTree.Utils (documentTree, toPandocOrFail, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
@@ -18,8 +18,8 @@ tests = testSpec "Grouped Inlines Tree → Pandoc" spec
 
 spec :: Spec
 spec = do
-  it "handles a tree containing just a root node" $ do
-    let input = Node (Root nullMeta) []
+  it "handles a tree with an empty body" $ do
+    let input = Node (Root nullMeta) [Node Body []]
         expected = Pandoc.doc $ fromList []
 
     output <- toPandocOrFail input
@@ -27,8 +27,7 @@ spec = do
 
   it "handles a simple document with a heading and a couple of paragraphs" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                 [ Node
@@ -68,8 +67,7 @@ spec = do
 
   it "assigns an inline node's children to the parent block" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -104,8 +102,7 @@ spec = do
 
   it "maintains marks order in case there is more than one" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -134,8 +131,7 @@ spec = do
 
   it "handles a paragraph containing an inline image" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -154,8 +150,7 @@ spec = do
 
   it "handles a paragraph mixing text and an inline image" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -184,8 +179,7 @@ spec = do
 
   it "handles a figure with an image body and no caption" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                 [ Node
@@ -214,8 +208,7 @@ spec = do
 
   it "handles a figure with an image body and a caption" $ do
     let input =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                 [ Node
@@ -250,13 +243,13 @@ spec = do
     output `shouldBe` expected
 
   it "reads a code block without an inline node as one with empty text" $ do
-    let input = Node (Root nullMeta) [Node (treePandocBlockNode (CodeBlock nullAttr "")) []]
+    let input = documentTree [Node (treePandocBlockNode (CodeBlock nullAttr "")) []]
         expected = Pandoc.doc $ fromList [CodeBlock nullAttr ""]
 
     output <- toPandocOrFail input
     output `shouldBe` expected
 
   it "fails with a malformed tree error for a caption outside a figure" $ do
-    let input = Node (Root nullMeta) [Node treeCaptionNode []]
+    let input = documentTree [Node treeCaptionNode []]
 
     toPandoc input `shouldBe` Left (MalformedTreeError "Found orphan caption node")

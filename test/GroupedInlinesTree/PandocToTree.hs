@@ -5,7 +5,7 @@ module GroupedInlinesTree.PandocToTree (tests) where
 import Data.Tree (Tree (Node))
 import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
 import DocTree.GroupedInlines (DocNode (..), InlineSpan (..), toTree)
-import GroupedInlinesTree.Utils (treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
+import GroupedInlinesTree.Utils (documentTree, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
@@ -19,7 +19,7 @@ spec :: Spec
 spec = do
   it "handles an empty Pandoc document" $ do
     let input = Pandoc.doc $ fromList []
-        expected = Node (Root nullMeta) []
+        expected = Node (Root nullMeta) [Node Body []]
 
     toTree input `shouldBe` expected
 
@@ -35,8 +35,7 @@ spec = do
         -- Note that the pandoc blocks in the tree representation always have empty children.
         -- Their inline content (children) is modeled as separate nodes in the tree.
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Header 1 nullAttr [])
                 [ Node
@@ -82,8 +81,7 @@ spec = do
                 ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -114,8 +112,7 @@ spec = do
                 ]
 
     let expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -149,8 +146,7 @@ spec = do
               ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node (treeTextSpansNode [RichText.TextSpan "She replied “yes” to the question" []]) []
@@ -166,8 +162,7 @@ spec = do
               [Pandoc.Para [Pandoc.Str "then", Pandoc.Space, Pandoc.Str "added", Pandoc.Space, Pandoc.Quoted Pandoc.SingleQuote [Pandoc.Str "maybe"]]]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node (treeTextSpansNode [RichText.TextSpan "then added ‘maybe’" []]) []
@@ -185,8 +180,7 @@ spec = do
               [Pandoc.Para [Pandoc.Quoted Pandoc.DoubleQuote [Pandoc.Str "a", Pandoc.Space, Pandoc.Strong [Pandoc.Str "bold"], Pandoc.Space, Pandoc.Str "claim"]]]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -211,8 +205,7 @@ spec = do
               [Pandoc.Para [Pandoc.Quoted Pandoc.SingleQuote [Pandoc.Strong [Pandoc.Str "wow"]]]]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -242,8 +235,7 @@ spec = do
               ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -266,8 +258,7 @@ spec = do
               [Pandoc.Para [Pandoc.Str "foo", Pandoc.SoftBreak, Pandoc.Str "bar", Pandoc.LineBreak, Pandoc.Str "baz"]]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node (treeTextSpansNode [RichText.TextSpan "foo bar\nbaz" []]) []
@@ -283,8 +274,7 @@ spec = do
               [Pandoc.Para [Pandoc.Image nullAttr [Pandoc.Str "alt text"] ("img.png", "the title")]]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -307,8 +297,7 @@ spec = do
               ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node
@@ -335,8 +324,7 @@ spec = do
               ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                 [ Node
@@ -364,8 +352,7 @@ spec = do
               ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                 [ Node
@@ -405,8 +392,7 @@ spec = do
               ]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Figure nullAttr emptyCaption [])
                 [ Node
@@ -441,8 +427,7 @@ spec = do
         -- Unlike the supported blocks above, the payload is kept in the node
         -- (not modeled as children) so the block survives the round trip.
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [Node (treePandocBlockNode lineBlock) []]
 
     toTree input `shouldBe` expected
@@ -451,8 +436,7 @@ spec = do
     let input = Pandoc.doc $ fromList [CodeBlock nullAttr ""]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [Node (treePandocBlockNode (CodeBlock nullAttr "")) []]
 
     toTree input `shouldBe` expected
@@ -461,8 +445,7 @@ spec = do
     let input = Pandoc.doc $ fromList [Para [Str "Energy", Space, Math InlineMath "E = mc^2"]]
 
         expected =
-          Node
-            (Root nullMeta)
+          documentTree
             [ Node
                 (treePandocBlockNode $ Pandoc.Para [])
                 [ Node

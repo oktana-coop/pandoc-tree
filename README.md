@@ -22,12 +22,13 @@ Inline content is **one node** holding a _list_ of marked spans (grouped accordi
 
 ```
 Root (Meta)
-  ├── Header 1
-  │   └── InlineNode  [ "Title" ]
-  ├── Para
-  │   └── InlineNode  [ "This is " | "strong text with " ⟨Strong⟩ | "emphasis" ⟨Strong,Emph⟩ ]
-  └── Para
-      └── InlineNode  [ "More text here." ]
+  └── Body
+      ├── Header 1
+      │   └── InlineNode  [ "Title" ]
+      ├── Para
+      │   └── InlineNode  [ "This is " | "strong text with " ⟨Strong⟩ | "emphasis" ⟨Strong,Emph⟩ ]
+      └── Para
+          └── InlineNode  [ "More text here." ]
 ```
 
 ### Leaf-Text-Spans Tree
@@ -36,17 +37,18 @@ Each inline span is its **own leaf node** under a wrapper inline node. A new lea
 
 ```
 Root (Meta)
-  ├── Header 1
-  │   └── InlineNode
-  │       └── "Title"
-  ├── Para
-  │   └── InlineNode
-  │       ├── "This is "
-  │       ├── "strong text with "   {Strong}
-  │       └── "emphasis"            {Strong, Emph}
-  └── Para
-      └── InlineNode
-          └── "More text here."
+  └── Body
+      ├── Header 1
+      │   └── InlineNode
+      │       └── "Title"
+      ├── Para
+      │   └── InlineNode
+      │       ├── "This is "
+      │       ├── "strong text with "   {Strong}
+      │       └── "emphasis"            {Strong, Emph}
+      └── Para
+          └── InlineNode
+              └── "More text here."
 ```
 
 Marks are only the default reason to start a new leaf. Because each span is its own node, the same "break a new leaf wherever a per-span property changes" rule generalizes to **any** per-span data a consumer wants to carry. When computing edits, for example, spans can be segmented by their marks _and_ by an edit operation (insert / delete / copy), so each leaf is a run that shares the same marks _and_ the same operation. This makes the leaf-text-spans tree a natural substrate for **diffing and other per-span annotations**, while the grouped-inlines tree stays focused on faithful representation and round-tripping.
