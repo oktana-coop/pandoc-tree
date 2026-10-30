@@ -2,15 +2,16 @@
 
 module GroupedInlinesTree.PandocToTree (tests) where
 
+import qualified Data.Map as M
 import Data.Tree (Tree (Node))
-import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
+import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
 import DocTree.GroupedInlines (DocNode (..), InlineSpan (..), toTree)
-import GroupedInlinesTree.Utils (documentTree, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
+import GroupedInlinesTree.Utils (documentTree, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treeMetaKeyNode, treeMetaValueNode, treeNoteContentNode, treePandocBlockNode, treeTextSpansNode)
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
-import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), MathType (..), QuoteType (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
-import Text.Pandoc.Definition (nullAttr, nullMeta)
+import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), MathType (..), Meta (..), MetaValue (..), Pandoc (..), QuoteType (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
+import Text.Pandoc.Definition (nullAttr)
 
 tests :: IO TestTree
 tests = testSpec "Pandoc → Grouped Inlines Tree" spec
@@ -19,7 +20,7 @@ spec :: Spec
 spec = do
   it "handles an empty Pandoc document" $ do
     let input = Pandoc.doc $ fromList []
-        expected = Node (Root nullMeta) [Node Body []]
+        expected = Node Root [Node Metadata [], Node Body []]
 
     toTree input `shouldBe` expected
 
@@ -451,6 +452,114 @@ spec = do
                 [ Node
                     (treeInlineSpansNode [InlineText (RichText.TextSpan "Energy " []), PandocInline (Math InlineMath "E = mc^2")])
                     []
+                ]
+            ]
+
+    toTree input `shouldBe` expected
+
+  it "puts each metadata key under the metadata node, with its value as its only child" $ do
+    let input =
+          Pandoc.Pandoc
+            ( Pandoc.Meta $
+                M.fromList
+                  [ ("draft", MetaBool True),
+                    ("title", MetaInlines [Str "A", Space, Emph [Str "short"], Space, Str "title"]),
+                    ("version", MetaString "1.10")
+                  ]
+            )
+            []
+
+        -- Booleans and strings are held whole. Inlines are held empty, with one inline node as their child.
+        expected =
+          Node
+            Root
+            [ Node
+                Metadata
+                [ Node (treeMetaKeyNode "draft") [Node (treeMetaValueNode $ MetaBool True) []],
+                  Node
+                    (treeMetaKeyNode "title")
+                    [ Node
+                        (treeMetaValueNode $ MetaInlines [])
+                        [Node (treeTextSpansNode [RichText.TextSpan "A " [], RichText.TextSpan "short" [RichText.EmphMark], RichText.TextSpan " title" []]) []]
+                    ],
+                  Node (treeMetaKeyNode "version") [Node (treeMetaValueNode $ MetaString "1.10") []]
+                ],
+              Node Body []
+            ]
+
+    toTree input `shouldBe` expected
+
+  it "holds maps, lists and blocks values empty, with their content as children" $ do
+    let input =
+          Pandoc.Pandoc
+            ( Pandoc.Meta $
+                M.fromList
+                  [ ("abstract", MetaBlocks [Para [Str "One."], Para [Str "Two."]]),
+                    ("authors", MetaList [MetaMap $ M.fromList [("name", MetaInlines [Str "Ada"])]])
+                  ]
+            )
+            []
+
+        expected =
+          Node
+            Root
+            [ Node
+                Metadata
+                [ Node
+                    (treeMetaKeyNode "abstract")
+                    [ Node
+                        (treeMetaValueNode $ MetaBlocks [])
+                        [ Node (treePandocBlockNode $ Para []) [Node (treeTextSpansNode [RichText.TextSpan "One." []]) []],
+                          Node (treePandocBlockNode $ Para []) [Node (treeTextSpansNode [RichText.TextSpan "Two." []]) []]
+                        ]
+                    ],
+                  Node
+                    (treeMetaKeyNode "authors")
+                    [ Node
+                        (treeMetaValueNode $ MetaList [])
+                        [ Node
+                            (treeMetaValueNode $ MetaMap M.empty)
+                            [ Node
+                                (treeMetaKeyNode "name")
+                                [Node (treeMetaValueNode $ MetaInlines []) [Node (treeTextSpansNode [RichText.TextSpan "Ada" []]) []]]
+                            ]
+                        ]
+                    ]
+                ],
+              Node Body []
+            ]
+
+    toTree input `shouldBe` expected
+
+  it "numbers the notes in one sequence, the metadata's first, with their contents after the body's blocks" $ do
+    let input =
+          Pandoc.Pandoc
+            (Pandoc.Meta $ M.fromList [("title", MetaInlines [Str "Title", Note [Para [Str "Title note."]]])])
+            [Para [Str "Body", Note [Para [Str "Body note."]]]]
+
+        expected =
+          Node
+            Root
+            [ Node
+                Metadata
+                [ Node
+                    (treeMetaKeyNode "title")
+                    [ Node
+                        (treeMetaValueNode $ MetaInlines [])
+                        [Node (treeInlineSpansNode [InlineText (RichText.TextSpan "Title" []), NoteRef (RichText.NoteId "1")]) []]
+                    ]
+                ],
+              Node
+                Body
+                [ Node
+                    (treePandocBlockNode $ Para [])
+                    [Node (treeInlineSpansNode [InlineText (RichText.TextSpan "Body" []), NoteRef (RichText.NoteId "2")]) []],
+                  Node
+                    (treeNoteContentNode "1")
+                    [Node (treePandocBlockNode $ Para []) [Node (treeTextSpansNode [RichText.TextSpan "Title note." []]) []]],
+                  Node
+                    (treeNoteContentNode "2")
+                    [Node (treePandocBlockNode $ Para []) [Node (treeTextSpansNode [RichText.TextSpan "Body note." []]) []]]
                 ]
             ]
 

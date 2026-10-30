@@ -6,12 +6,12 @@ import Data.Tree (Tree (Node))
 import qualified DocTree.Common as RichText (Image (..), LinkMark (..), Mark (..), TextSpan (..))
 import DocTree.Error (MalformedTreeError (..))
 import DocTree.GroupedInlines (DocNode (..), InlineSpan (..), toPandoc)
-import GroupedInlinesTree.Utils (documentTree, toPandocOrFail, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treePandocBlockNode, treeTextSpansNode)
+import GroupedInlinesTree.Utils (documentTree, toPandocOrFail, treeCaptionNode, treeFigureContentNode, treeInlineSpansNode, treeMetaKeyNode, treePandocBlockNode, treeTextSpansNode)
 import Test.Hspec (Spec, it, shouldBe)
 import Test.Tasty (TestTree)
 import Test.Tasty.Hspec (testSpec)
 import Text.Pandoc.Builder as Pandoc (Block (..), Caption (..), Inline (..), doc, emptyCaption, fromList, link, para, str, strong, toList)
-import Text.Pandoc.Definition (nullAttr, nullMeta)
+import Text.Pandoc.Definition (nullAttr)
 
 tests :: IO TestTree
 tests = testSpec "Grouped Inlines Tree → Pandoc" spec
@@ -19,7 +19,7 @@ tests = testSpec "Grouped Inlines Tree → Pandoc" spec
 spec :: Spec
 spec = do
   it "handles a tree with an empty body" $ do
-    let input = Node (Root nullMeta) [Node Body []]
+    let input = Node Root [Node Metadata [], Node Body []]
         expected = Pandoc.doc $ fromList []
 
     output <- toPandocOrFail input
@@ -253,3 +253,13 @@ spec = do
     let input = documentTree [Node treeCaptionNode []]
 
     toPandoc input `shouldBe` Left (MalformedTreeError "Found orphan caption node")
+
+  it "fails with a malformed tree error for a root without the metadata" $ do
+    let input = Node Root [Node Body []]
+
+    toPandoc input `shouldBe` Left (MalformedTreeError "Expected a root with the metadata and the body as its children")
+
+  it "fails with a malformed tree error for a metadata key without a value" $ do
+    let input = Node Root [Node Metadata [Node (treeMetaKeyNode "title") []], Node Body []]
+
+    toPandoc input `shouldBe` Left (MalformedTreeError "Expected a metadata key with one value")

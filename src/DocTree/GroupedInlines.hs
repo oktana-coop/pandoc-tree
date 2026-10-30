@@ -1,15 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module DocTree.GroupedInlines (BlockNode (..), InlineSpan (..), InlineNode (..), DocNode (..), RichTextNode (..), toTree, toPandoc) where
+module DocTree.GroupedInlines (BlockNode (..), MetaNode (..), InlineSpan (..), InlineNode (..), DocNode (..), RichTextNode (..), toTree, toPandoc) where
 
-import Control.Monad.State (State, get, modify, runState)
+import Control.Monad.State (State, evalState, get, gets, modify)
 import Data.List (partition)
 import qualified Data.Map as M
 import qualified Data.Text as T
 import Data.Tree (Tree (Node), foldTree, unfoldForestM, unfoldTreeM)
-import DocTree.Common (BlockNode (..), Image (..), InlineSpan (..), LinkMark (..), Mark (..), NoteId (..), TextSpan (..))
+import DocTree.Common (BlockNode (..), Image (..), InlineSpan (..), LinkMark (..), Mark (..), MetaNode (..), NoteId (..), TextSpan (..))
 import DocTree.Error (MalformedTreeError (..))
-import Text.Pandoc (nullMeta)
 import qualified Text.Pandoc.Builder as Pandoc
   ( Block (..),
     Inlines,
@@ -25,7 +24,7 @@ import qualified Text.Pandoc.Builder as Pandoc
     strong,
     toList,
   )
-import qualified Text.Pandoc.Definition as Pandoc (Caption (..), Inline (..), Meta (..), Pandoc (..), QuoteType (..))
+import qualified Text.Pandoc.Definition as Pandoc (Caption (..), Inline (..), Meta (..), MetaValue (..), Pandoc (..), QuoteType (..))
 import Utils.Sequence (firstValue)
 
 data InlineNode = InlineContent [InlineSpan] deriving (Show, Eq)
@@ -38,7 +37,7 @@ instance Monoid InlineNode where
 
 data RichTextNode = BlockNode BlockNode | InlineNode InlineNode deriving (Show, Eq)
 
-data DocNode = Root Pandoc.Meta | Body | RichTextNode RichTextNode deriving (Show, Eq)
+data DocNode = Root | Metadata | Body | MetaNode MetaNode | RichTextNode RichTextNode deriving (Show, Eq)
 
 data NoteData = NoteData
   { noteCounter :: Int,
@@ -49,13 +48,52 @@ data NoteData = NoteData
 type NotesState = State NoteData
 
 toTree :: Pandoc.Pandoc -> Tree DocNode
-toTree (Pandoc.Pandoc meta blocks) = Node (Root meta) [Node Body forestWithNotes]
+toTree (Pandoc.Pandoc meta blocks) = evalState documentTree initialState
   where
-    blockNodes = map (BlockNode . PandocBlock) blocks
-    (mainForest, notesState) = runState (unfoldForestM richTextNodeUnfolder blockNodes) initialState
     initialState = NoteData 0 []
-    noteTrees = noteContents notesState
-    forestWithNotes = mainForest <> noteTrees
+
+    -- The notes are numbered in one sequence, the metadata's first.
+    documentTree :: NotesState (Tree DocNode)
+    documentTree = do
+      metadataTree <- toMetaTree meta
+      bodyTree <- toBodyTree blocks
+      return $ Node Root [metadataTree, bodyTree]
+
+    toMetaTree :: Pandoc.Meta -> NotesState (Tree DocNode)
+    toMetaTree (Pandoc.Meta entries) = fmap (Node Metadata) (toMetaKeyTrees entries)
+
+    toBodyTree :: [Pandoc.Block] -> NotesState (Tree DocNode)
+    toBodyTree bodyBlocks = do
+      mainForest <- blocksToRichTextForest bodyBlocks
+      -- All the note contents belong to the body (even if the respective note refs are in metadata).
+      noteTrees <- gets noteContents
+      return $ Node Body (mainForest <> noteTrees)
+
+toMetaKeyTrees :: M.Map T.Text Pandoc.MetaValue -> NotesState [Tree DocNode]
+toMetaKeyTrees entries = traverse toMetaKeyTree (M.toList entries)
+  where
+    toMetaKeyTree :: (T.Text, Pandoc.MetaValue) -> NotesState (Tree DocNode)
+    toMetaKeyTree (key, metaValue) = do
+      valueTree <- toMetaValueTree metaValue
+      return $ Node (MetaNode $ MetaKey key) [valueTree]
+
+-- Maps, lists, inlines and blocks are held empty, with their content as children. Booleans and strings are held whole.
+toMetaValueTree :: Pandoc.MetaValue -> NotesState (Tree DocNode)
+toMetaValueTree metaValue = case metaValue of
+  Pandoc.MetaMap entries -> fmap (Node $ metaValueNode $ Pandoc.MetaMap M.empty) (toMetaKeyTrees entries)
+  Pandoc.MetaList metaValues -> fmap (Node $ metaValueNode $ Pandoc.MetaList []) (traverse toMetaValueTree metaValues)
+  Pandoc.MetaInlines inlines -> do
+    inlineNode <- buildInlineNode inlines
+    fmap (Node $ metaValueNode $ Pandoc.MetaInlines []) (unfoldForestM richTextNodeUnfolder [inlineNode])
+  Pandoc.MetaBlocks blocks -> fmap (Node $ metaValueNode $ Pandoc.MetaBlocks []) (blocksToRichTextForest blocks)
+  Pandoc.MetaBool _ -> return $ Node (metaValueNode metaValue) []
+  Pandoc.MetaString _ -> return $ Node (metaValueNode metaValue) []
+  where
+    metaValueNode :: Pandoc.MetaValue -> DocNode
+    metaValueNode = MetaNode . PandocMetaValue
+
+blocksToRichTextForest :: [Pandoc.Block] -> NotesState [Tree DocNode]
+blocksToRichTextForest blocks = unfoldForestM richTextNodeUnfolder (map (BlockNode . PandocBlock) blocks)
 
 richTextNodeUnfolder :: RichTextNode -> NotesState (DocNode, [RichTextNode])
 richTextNodeUnfolder (BlockNode blockNode) = blockNodeUnfolder blockNode
@@ -189,21 +227,50 @@ inlineNodeUnfolder inlineNode = (RichTextNode $ InlineNode inlineNode, [])
 data PandocElement = BlockElement Pandoc.Block | InlineElement Pandoc.Inlines | CaptionElement Pandoc.Caption
 
 toPandoc :: Tree DocNode -> Either MalformedTreeError Pandoc.Pandoc
-toPandoc tree = fmap (wrapToPandocWithMeta tree) (treeToPandocBlocks tree)
+toPandoc (Node Root [metadataTree, bodyTree]) = Pandoc.Pandoc <$> toMeta metadataTree <*> toBlocks bodyTree
   where
-    wrapToPandocWithMeta :: Tree DocNode -> [Pandoc.Block] -> Pandoc.Pandoc
-    wrapToPandocWithMeta (Node (Root meta) _) = Pandoc.Pandoc meta
-    wrapToPandocWithMeta _ = Pandoc.Pandoc nullMeta
+    -- The contents of all the notes, the metadata's included, are in the body.
+    noteContentsMap = buildNoteContentsMap bodyTree
+
+    toMeta :: Tree DocNode -> Either MalformedTreeError Pandoc.Meta
+    toMeta (Node Metadata keyTrees) = fmap Pandoc.Meta (toMetaEntries noteContentsMap keyTrees)
+    toMeta _ = Left $ MalformedTreeError "Expected a metadata node"
+
+    toBlocks :: Tree DocNode -> Either MalformedTreeError [Pandoc.Block]
+    toBlocks tree = treeToPandocElements noteContentsMap tree >>= getBlocks
+toPandoc _ = Left $ MalformedTreeError "Expected a root with the metadata and the body as its children"
+
+toMetaEntries :: NoteContentsMap -> [Tree DocNode] -> Either MalformedTreeError (M.Map T.Text Pandoc.MetaValue)
+toMetaEntries noteContentsMap keyTrees = fmap M.fromList (traverse toMetaEntry keyTrees)
+  where
+    toMetaEntry :: Tree DocNode -> Either MalformedTreeError (T.Text, Pandoc.MetaValue)
+    toMetaEntry (Node (MetaNode (MetaKey key)) [valueTree]) = fmap ((,) key) (toMetaValue noteContentsMap valueTree)
+    toMetaEntry _ = Left $ MalformedTreeError "Expected a metadata key with one value"
+
+toMetaValue :: NoteContentsMap -> Tree DocNode -> Either MalformedTreeError Pandoc.MetaValue
+toMetaValue noteContentsMap valueTree@(Node (MetaNode (PandocMetaValue metaValue)) childTrees) = case metaValue of
+  Pandoc.MetaMap _ -> fmap Pandoc.MetaMap (toMetaEntries noteContentsMap childTrees)
+  Pandoc.MetaList _ -> fmap Pandoc.MetaList (traverse (toMetaValue noteContentsMap) childTrees)
+  Pandoc.MetaInlines _ -> fmap (Pandoc.MetaInlines . Pandoc.toList . mconcat) (treeToPandocElements noteContentsMap valueTree >>= traverse assertInlines)
+  Pandoc.MetaBlocks _ -> fmap Pandoc.MetaBlocks (treeToPandocElements noteContentsMap valueTree >>= getBlocks)
+  Pandoc.MetaBool _ -> Right metaValue
+  Pandoc.MetaString _ -> Right metaValue
+toMetaValue _ _ = Left $ MalformedTreeError "Expected a metadata value"
 
 treeToPandocBlocks :: Tree DocNode -> Either MalformedTreeError [Pandoc.Block]
-treeToPandocBlocks tree = sequenceA (foldTree (treeNodeToPandocElement noteContentsMap) tree) >>= getBlocks
-  where
-    noteContentsMap = buildNoteContentsMap tree
+treeToPandocBlocks tree = treeToPandocElements (buildNoteContentsMap tree) tree >>= getBlocks
+
+treeToPandocElements :: NoteContentsMap -> Tree DocNode -> Either MalformedTreeError [PandocElement]
+treeToPandocElements noteContentsMap tree = sequenceA (foldTree (treeNodeToPandocElement noteContentsMap) tree)
 
 treeNodeToPandocElement :: NoteContentsMap -> DocNode -> [[Either MalformedTreeError PandocElement]] -> [Either MalformedTreeError PandocElement]
 treeNodeToPandocElement noteContentsMap node childrenNodes = case node of
-  Root _ -> concat childrenNodes
+  Root -> concat childrenNodes
+  Metadata -> concat childrenNodes
   Body -> concat childrenNodes
+  -- A metadata key or value just returns its children's elements. In practice, only the `PandocMetaValue` node of an
+  -- inlines or blocks value gets here, as the root of its subtree.
+  MetaNode _ -> concat childrenNodes
   -- TODO: Consider just concatenating children in the case of `Plain`.
   RichTextNode (BlockNode (PandocBlock (Pandoc.Plain _))) -> [fmap (BlockElement . Pandoc.Plain . Pandoc.toList) (concatChildrenInlines childrenNodes)]
   RichTextNode (BlockNode (PandocBlock (Pandoc.Para _))) -> [fmap (BlockElement . Pandoc.Para . Pandoc.toList) (concatChildrenInlines childrenNodes)]

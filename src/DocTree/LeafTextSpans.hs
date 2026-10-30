@@ -1,8 +1,7 @@
 module DocTree.LeafTextSpans (DocNode (..), RichTextNode (..)) where
 
-import DocTree.Common (BlockNode (..), InlineSpan (..))
-import Text.Pandoc.Definition as Pandoc (Meta (..))
+import DocTree.Common (BlockNode (..), InlineSpan (..), MetaNode)
 
 data RichTextNode = BlockNode BlockNode | InlineNode | InlineContent InlineSpan deriving (Show, Eq)
 
-data DocNode = Root Pandoc.Meta | Body | RichTextNode RichTextNode deriving (Show, Eq)
+data DocNode = Root | Metadata | Body | MetaNode MetaNode | RichTextNode RichTextNode deriving (Show, Eq)

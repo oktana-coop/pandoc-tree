@@ -7,6 +7,11 @@ This library exposes data structures that leverage [Haskell's Tree type](https:/
 The library exposes two kinds of trees, differing only in how a block's **inline content** is laid out. Assuming the document:
 
 ```
+---
+title: A *short* title
+draft: true
+---
+
 # Title
 
 This is **strong text with *emphasis***
@@ -21,7 +26,13 @@ We can get the following trees:
 Inline content is **one node** holding a _list_ of marked spans (grouped according to their marks). Mirrors how [ProseMirror handles inline content](https://prosemirror.net/docs/guide/#doc).
 
 ```
-Root (Meta)
+Root
+  ├── Metadata
+  │   ├── MetaKey "draft"
+  │   │   └── PandocMetaValue (MetaBool True)
+  │   └── MetaKey "title"
+  │       └── PandocMetaValue (MetaInlines)
+  │           └── InlineNode  [ "A " | "short" ⟨Emph⟩ | " title" ]
   └── Body
       ├── Header 1
       │   └── InlineNode  [ "Title" ]
@@ -36,7 +47,16 @@ Root (Meta)
 Each inline span is its **own leaf node** under a wrapper inline node. A new leaf usually begins **wherever the mark set changes**:
 
 ```
-Root (Meta)
+Root
+  ├── Metadata
+  │   ├── MetaKey "draft"
+  │   │   └── PandocMetaValue (MetaBool True)
+  │   └── MetaKey "title"
+  │       └── PandocMetaValue (MetaInlines)
+  │           └── InlineNode
+  │               ├── "A "
+  │               ├── "short"           {Emph}
+  │               └── " title"
   └── Body
       ├── Header 1
       │   └── InlineNode
